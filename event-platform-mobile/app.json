@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "Event Platform",
+    "slug": "event-platform-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "scheme": "eventplatform",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#6366F1"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.eventplatform.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#6366F1"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.eventplatform.mobile",
+      "usesCleartextTraffic": true
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#6366F1"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "event-platform-mobile"
+      }
+    }
+  }
+}

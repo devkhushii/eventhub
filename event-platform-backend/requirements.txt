@@ -1,0 +1,14 @@
+argon2-cffi
+celery
+faker
+fastapi-mail
+fastapi[all]
+gunicorn
+passlib[bcrypt]
+psycopg2-binary
+python-jose[cryptography]
+razorpay
+redis
+requests
+locust
+sqlalchemy
