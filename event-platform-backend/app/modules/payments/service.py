@@ -229,7 +229,8 @@ class PaymentService:
         try:
             from app.modules.tasks import verify_payment_status_task
 
-            verify_payment_status_task.apply_async((str(payment.id),), countdown=600)
+            # Start verification after 5 seconds (user needs time to complete payment)
+            verify_payment_status_task.apply_async((str(payment.id),), countdown=5)
         except Exception as e:
             logger.warning(f"[PAYMENT] Failed to schedule verification task: {e}")
 
@@ -412,7 +413,9 @@ class PaymentService:
         return payout
 
     @staticmethod
-    def refund(db: Session, payment_id: UUID, initiated_by: str = "user", user_id: UUID = None):
+    def refund(
+        db: Session, payment_id: UUID, initiated_by: str = "user", user_id: UUID = None
+    ):
         logger.info(
             f"Processing refund: payment_id={payment_id}, initiated_by={initiated_by}"
         )
@@ -427,7 +430,9 @@ class PaymentService:
 
         # Validate ownership: user can only refund their own bookings
         if user_id and booking.user_id != user_id:
-            logger.warning(f"Refund denied: user {user_id} does not own booking {booking.id}")
+            logger.warning(
+                f"Refund denied: user {user_id} does not own booking {booking.id}"
+            )
             raise HTTPException(
                 status_code=403, detail="Not authorized to refund this payment"
             )

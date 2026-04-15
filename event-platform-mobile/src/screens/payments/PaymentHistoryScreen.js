@@ -35,15 +35,16 @@ const PaymentHistoryScreen = ({ navigation }) => {
       const paymentRecords = [];
       
       for (const booking of bookings) {
-        console.log('[PaymentHistory] Processing booking:', booking.id, 'advance_amount:', booking.advance_amount, 'advance_paid:', booking.advance_paid, 'status:', booking.status);
+        console.log('[PaymentHistory] Processing booking:', booking.id, 'advance_amount:', booking.advance_amount, 'status:', booking.status);
         
         if (booking.advance_amount) {
+          const isAdvancePaid = booking.status !== 'AWAITING_ADVANCE';
           paymentRecords.push({
             id: `${booking.id}-advance`,
             booking_id: booking.id,
             amount: booking.advance_amount,
             type: 'Advance Payment',
-            status: booking.advance_paid ? 'SUCCESS' : (booking.status === 'AWAITING_ADVANCE' ? 'PENDING' : 'FAILED'),
+            status: isAdvancePaid ? 'SUCCESS' : (booking.status === 'AWAITING_ADVANCE' ? 'PENDING' : 'FAILED'),
             created_at: booking.created_at,
             booking_status: booking.status,
           });

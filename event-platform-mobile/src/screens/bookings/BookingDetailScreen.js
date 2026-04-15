@@ -141,8 +141,7 @@ const BookingDetailScreen = ({ navigation, route }) => {
     console.log('[BookingDetail] Navigating to payment with booking:', { 
       id: booking.id, 
       status: booking.status,
-      advance_amount: booking.advance_amount,
-      advance_paid: booking.advance_paid 
+      advance_amount: booking.advance_amount
     });
     
     let paymentType = 'ADVANCE';
