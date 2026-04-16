@@ -24,6 +24,9 @@ services:
   api:
     build: .
     restart: always
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     environment:
       ENVIRONMENT: development
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-eventhub}
@@ -62,6 +65,9 @@ services:
     build: .
     command: celery -A app.core.celery_app.celery_app worker --loglevel=info
     restart: always
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-eventhub}
       REDIS_URL: redis://redis:6379/0

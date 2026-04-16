@@ -1,4 +1,6 @@
 # scripts/generate_fake_data.py
+# Robust fake data generator for FastAPI + SQLAlchemy event platform
+# Safe to run multiple times - handles existing data gracefully
 
 import random
 from faker import Faker
@@ -7,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from app.db.session import SessionLocal
 from app.modules.users.models import User
 
-# Import auth models first to ensure they're registered before User is used
+# Import auth models first to ensure they're registered
 from app.modules.auth.models import (
     RefreshToken,
     EmailVerificationToken,
@@ -38,7 +40,10 @@ from app.modules.notifications.models import Notification
 
 fake = Faker()
 
+# Initialize database session - will be cleaned up at script end
 db = SessionLocal()
+
+# --- CONSTANTS ---
 
 SERVICE_TYPES = [
     ListingType.VENUE,
@@ -112,52 +117,28 @@ CITIES = [
 ]
 
 
-# -----------------------
-# CREATE USERS
-# -----------------------
+# --- HELPER FUNCTIONS ---
 
 
-def create_users(n=30):
-    existing_count = db.query(User).count()
-    if existing_count > 1:
-        print(f"Users already exist ({existing_count}), skipping user creation")
-        return db.query(User).filter(User.role == "USER").limit(n).all()
-
-    users = []
-
-    for _ in range(n):
-        user = User(
-            email=fake.unique.email(),
-            password_hash=hash_password("password123"),
-            full_name=fake.name(),
-            phone=fake.phone_number()[:20],
-            avatar_url=fake.image_url(width=200, height=200),
-            fcm_token=fake.uuid4() if random.random() > 0.5 else None,
-            device_token=fake.uuid4() if random.random() > 0.7 else None,
-            role="USER",
-            is_admin=False,
-            is_active=True,
-            is_verified=random.choice([True, True, True, False]),
-        )
-
-        db.add(user)
-        users.append(user)
-
-    db.commit()
-
-    print(f"{n} users created")
-
-    return users
+def get_random_safe(items: list) -> any:
+    """Safely get a random item from a list."""
+    if not items:
+        return None
+    return random.choice(items)
 
 
-# -----------------------
-# CREATE ADMIN USER
-# -----------------------
+def get_random_sample_safe(items: list, n: int) -> list:
+    """Safely get n random items from a list."""
+    if not items or n <= 0:
+        return []
+    return random.sample(items, min(n, len(items)))
+
+
+# --- CORE FUNCTIONS ---
 
 
 def create_admin_user():
-    from app.modules.users.models import User
-
+    """Create admin user if not exists."""
     existing_admin = db.query(User).filter(User.email == "admin@eventhub.com").first()
     if existing_admin:
         print("Admin user already exists, skipping")
@@ -180,24 +161,86 @@ def create_admin_user():
     db.refresh(admin)
 
     print("Admin user created")
-
     return admin
 
 
-# -----------------------
-# CREATE VENDORS
-# -----------------------
+def create_users(n=30):
+    """
+    Ensure at least n users exist in the database.
+    Creates additional users if needed.
+    """
+    existing_count = db.query(User).count()
+    existing_users = db.query(User).filter(User.role == "USER").all()
+
+    if len(existing_users) >= n:
+        print(f"Users already exist ({len(existing_users)}), using existing users")
+        return existing_users[:n]
+
+    # Need to create more users
+    users_to_create = n - len(existing_users)
+    print(f"Creating {users_to_create} additional users...")
+
+    new_users = []
+    for _ in range(users_to_create):
+        try:
+            user = User(
+                email=fake.unique.email(),
+                password_hash=hash_password("password123"),
+                full_name=fake.name(),
+                phone=fake.phone_number()[:20],
+                avatar_url=fake.image_url(width=200, height=200),
+                fcm_token=fake.uuid4() if random.random() > 0.5 else None,
+                device_token=fake.uuid4() if random.random() > 0.7 else None,
+                role="USER",
+                is_admin=False,
+                is_active=True,
+                is_verified=random.choice([True, True, True, False]),
+            )
+            db.add(user)
+            new_users.append(user)
+        except Exception as e:
+            print(f"Warning: Could not create user: {e}")
+            continue
+
+    if new_users:
+        db.commit()
+        print(f"{len(new_users)} users created")
+
+    # Return all users up to n
+    all_users = db.query(User).filter(User.role == "USER").all()
+    return all_users[:n]
 
 
 def create_vendors(users, n=12):
+    """
+    Create vendors for users who don't already have one.
+    Returns list of actually created vendors.
+    """
+    if not users:
+        print("No users available for vendor creation")
+        return []
+
+    # Filter out users who already have vendors
+    non_vendor_users = []
+    for u in users:
+        # Check if user already has a vendor
+        has_vendor = db.query(Vendor).filter(Vendor.user_id == u.id).first() is not None
+        if not has_vendor:
+            non_vendor_users.append(u)
+
+    if not non_vendor_users:
+        print("No eligible users for vendor creation (all users already have vendors)")
+        return []
+
+    # Don't create more vendors than available users
+    users_to_make_vendor = min(n, len(non_vendor_users))
+    selected_users = get_random_sample_safe(non_vendor_users, users_to_make_vendor)
+
+    if not selected_users:
+        print("No users selected for vendor creation")
+        return []
+
     vendors = []
-
-    non_vendor_users = [
-        u for u in users if not hasattr(u, "vendor") or u.vendor is None
-    ]
-
-    selected_users = random.sample(non_vendor_users, min(n, len(non_vendor_users)))
-
     for user in selected_users:
         verification_status = random.choice(VERIFICATION_STATUSES)
 
@@ -220,22 +263,26 @@ def create_vendors(users, n=12):
 
     db.commit()
 
-    print(f"{n} vendors created")
-
+    print(f"{len(vendors)} vendors created")
     return vendors
 
 
-# -----------------------
-# CREATE LISTINGS
-# -----------------------
-
-
 def create_listings(vendors, n=40):
+    """Create listings for vendors."""
+    if not vendors:
+        print("No vendors available to create listings")
+        return []
+
     listings = []
 
     for _ in range(n):
-        vendor = random.choice(vendors)
-        service = random.choice(SERVICE_TYPES)
+        vendor = get_random_safe(vendors)
+        if not vendor:
+            continue
+
+        service = get_random_safe(SERVICE_TYPES)
+        if not service:
+            continue
 
         start = datetime.now(timezone.utc) + timedelta(days=random.randint(1, 30))
         end = start + timedelta(days=random.randint(1, 7))
@@ -246,43 +293,40 @@ def create_listings(vendors, n=40):
             description=fake.paragraph(nb_sentences=5),
             listing_type=service,
             price=round(random.uniform(500, 25000), 2),
-            location=random.choice(CITIES),
+            location=get_random_safe(CITIES) or "Mumbai",
             start_date=start,
             end_date=end,
             details={
                 "capacity": random.randint(10, 500)
                 if service == ListingType.VENUE
                 else None,
-                "duration_hours": random.choice([4, 6, 8, 12])
+                "duration_hours": get_random_safe([4, 6, 8, 12])
                 if service != ListingType.VENUE
                 else None,
-                "equipment_included": random.choice([True, False])
+                "equipment_included": get_random_safe([True, False])
                 if service in [ListingType.DJ, ListingType.PHOTOGRAPHER]
                 else None,
                 "specializations": [fake.word() for _ in range(random.randint(1, 3))],
             },
-            status=random.choice(LISTING_STATUSES),
+            status=get_random_safe(LISTING_STATUSES) or ListingStatus.PUBLISHED,
             is_active=True,
         )
 
         db.add(listing)
-        db.flush()
-
         listings.append(listing)
 
     db.commit()
 
-    print(f"{n} listings created")
-
+    print(f"{len(listings)} listings created")
     return listings
 
 
-# -----------------------
-# ADD IMAGES TO LISTINGS
-# -----------------------
-
-
 def add_listing_images(listings):
+    """Add images to listings."""
+    if not listings:
+        print("No listings to add images to")
+        return 0
+
     total_images = 0
 
     for listing in listings:
@@ -293,26 +337,33 @@ def add_listing_images(listings):
                 listing_id=listing.id,
                 image_url=f"https://picsum.photos/seed/{fake.uuid4()}/800/600",
             )
-
             db.add(image)
             total_images += 1
 
     db.commit()
 
     print(f"{total_images} listing images added")
-
-
-# -----------------------
-# CREATE BOOKINGS
-# -----------------------
+    return total_images
 
 
 def create_bookings(users, listings, n=60):
+    """Create bookings for users and listings."""
+    if not users:
+        print("No users available to create bookings")
+        return []
+
+    if not listings:
+        print("No listings available to create bookings")
+        return []
+
     bookings = []
 
     for _ in range(n):
-        user = random.choice(users)
-        listing = random.choice(listings)
+        user = get_random_safe(users)
+        listing = get_random_safe(listings)
+
+        if not user or not listing:
+            continue
 
         event_date = datetime.now(timezone.utc) + timedelta(days=random.randint(5, 120))
         end_date = event_date + timedelta(hours=random.choice([4, 6, 8, 12]))
@@ -320,7 +371,7 @@ def create_bookings(users, listings, n=60):
         total_price = listing.price * random.uniform(0.8, 1.5)
         advance_amount = round(total_price * 0.3, 2)
 
-        status = random.choice(BOOKING_STATUSES)
+        status = get_random_safe(BOOKING_STATUSES) or BookingStatus.PENDING
 
         advance_paid = (
             status in [BookingStatus.CONFIRMED, BookingStatus.COMPLETED]
@@ -351,25 +402,26 @@ def create_bookings(users, listings, n=60):
         )
 
         db.add(booking)
-        db.flush()
         bookings.append(booking)
 
     db.commit()
 
-    print(f"{n} bookings created")
-
+    print(f"{len(bookings)} bookings created")
     return bookings
 
 
-# -----------------------
-# CREATE PAYMENTS
-# -----------------------
-
-
 def create_payments(bookings):
+    """Create payments for bookings."""
+    if not bookings:
+        print("No bookings available to create payments")
+        return []
+
     payments = []
 
     for booking in bookings:
+        if not booking.listing:
+            continue
+
         if booking.status in [
             BookingStatus.CONFIRMED,
             BookingStatus.AWAITING_FINAL_PAYMENT,
@@ -384,8 +436,11 @@ def create_payments(bookings):
                 elif booking.status == BookingStatus.AWAITING_FINAL_PAYMENT:
                     escrow_status = EscrowStatus.HELD
                 elif booking.status == BookingStatus.COMPLETED:
-                    escrow_status = random.choice(
-                        [EscrowStatus.RELEASED, EscrowStatus.PARTIALLY_RELEASED]
+                    escrow_status = (
+                        get_random_safe(
+                            [EscrowStatus.RELEASED, EscrowStatus.PARTIALLY_RELEASED]
+                        )
+                        or EscrowStatus.RELEASED
                     )
 
                 vendor_released = (
@@ -408,7 +463,6 @@ def create_payments(bookings):
                     payment_link_url=f"https://razorpay.com/payment/{fake.uuid4()[:12]}",
                 )
                 db.add(payment)
-                db.flush()
                 payments.append(payment)
 
         if booking.status == BookingStatus.COMPLETED:
@@ -421,36 +475,37 @@ def create_payments(bookings):
                     amount=final_amount,
                     payment_type=PaymentType.FINAL,
                     status=PaymentStatus.SUCCESS,
-                    escrow_status=random.choice(
+                    escrow_status=get_random_safe(
                         [EscrowStatus.RELEASED, EscrowStatus.HELD]
-                    ),
+                    )
+                    or EscrowStatus.HELD,
                     vendor_released_amount=random.randint(0, final_amount),
                     escrow_amount=random.randint(0, final_amount),
                     razorpay_order_id=f"order_{fake.uuid4().replace('-', '')[:20]}",
                     razorpay_payment_id=f"pay_{fake.uuid4().replace('-', '')[:20]}",
                 )
                 db.add(final_payment)
-                db.flush()
                 payments.append(final_payment)
 
     db.commit()
 
     print(f"{len(payments)} payments created")
-
     return payments
 
 
-# -----------------------
-# CREATE PAYOUTS
-# -----------------------
-
-
 def create_payouts(payments):
+    """Create payouts from payments."""
+    if not payments:
+        print("No payments available to create payouts")
+        return []
+
     payouts = []
     vendor_ids = set()
 
     for payment in payments:
         if payment.status == PaymentStatus.SUCCESS and payment.booking:
+            if not payment.booking.listing:
+                continue
             vendor_id = payment.booking.listing.vendor_id
             vendor_ids.add(vendor_id)
 
@@ -474,25 +529,26 @@ def create_payouts(payments):
     db.commit()
 
     print(f"{len(payouts)} payouts created")
-
     return payouts
 
 
-# -----------------------
-# CREATE REVIEWS
-# -----------------------
-
-
 def create_reviews(bookings, n=40):
+    """Create reviews for completed bookings."""
+    if not bookings:
+        print("No bookings available for reviews")
+        return []
+
     completed_bookings = [b for b in bookings if b.status == BookingStatus.COMPLETED]
 
     if not completed_bookings:
         print("No completed bookings available for reviews")
         return []
 
-    selected_bookings = random.sample(
-        completed_bookings, min(n, len(completed_bookings))
-    )
+    selected_bookings = get_random_sample_safe(completed_bookings, n)
+
+    if not selected_bookings:
+        print("No bookings selected for reviews")
+        return []
 
     for booking in selected_bookings:
         review = Review(
@@ -502,38 +558,42 @@ def create_reviews(bookings, n=40):
             rating=random.randint(3, 5),
             comment=fake.paragraph(nb_sentences=3) if random.random() > 0.2 else None,
         )
-
         db.add(review)
 
     db.commit()
 
     print(f"{len(selected_bookings)} reviews created")
-
     return selected_bookings
 
 
-# -----------------------
-# CREATE CHAT ROOMS
-# -----------------------
-
-
 def create_chat_rooms(users, vendors, listings, bookings, n=30):
-    chat_rooms = []
+    """Create chat rooms."""
+    if not users:
+        print("No users available for chat rooms")
+        return []
 
+    if not vendors:
+        print("No vendors available for chat rooms")
+        return []
+
+    chat_rooms = []
     used_pairs = set()
 
     for _ in range(n):
-        user = random.choice(users)
+        user = get_random_safe(users)
+        vendor = get_random_safe(vendors)
 
-        vendor = random.choice(vendors)
+        if not user or not vendor:
+            continue
+
         pair = (user.id, vendor.id)
 
         if pair in used_pairs and len(used_pairs) < len(users) * len(vendors):
             continue
         used_pairs.add(pair)
 
-        listing = random.choice(listings) if random.random() > 0.3 else None
-        booking = random.choice(bookings) if random.random() > 0.5 else None
+        listing = get_random_safe(listings) if random.random() > 0.3 else None
+        booking = get_random_safe(bookings) if random.random() > 0.5 else None
 
         chat_room = ChatRoom(
             user_id=user.id,
@@ -543,29 +603,35 @@ def create_chat_rooms(users, vendors, listings, bookings, n=30):
         )
 
         db.add(chat_room)
-        db.flush()
         chat_rooms.append(chat_room)
 
     db.commit()
 
     print(f"{len(chat_rooms)} chat rooms created")
-
     return chat_rooms
 
 
-# -----------------------
-# CREATE MESSAGES
-# -----------------------
-
-
 def create_messages(chat_rooms, users, n=100):
+    """Create messages in chat rooms."""
+    if not chat_rooms:
+        print("No chat rooms available for messages")
+        return []
+
+    if not users:
+        print("No users available for messages")
+        return []
+
     messages = []
 
     for chat_room in chat_rooms:
         message_count = random.randint(3, 15)
 
         for i in range(message_count):
-            sender = random.choice([chat_room.user_id, users[0].id])
+            sender = (
+                get_random_safe([chat_room.user_id, users[0].id]) if users else None
+            )
+            if not sender:
+                continue
 
             message = Message(
                 chat_id=chat_room.id,
@@ -580,48 +646,78 @@ def create_messages(chat_rooms, users, n=100):
     db.commit()
 
     print(f"{len(messages)} messages created")
-
     return messages
 
 
-# -----------------------
-# RUN ALL
-# -----------------------
+# --- MAIN RUN FUNCTION ---
 
 
 def run():
+    """Generate all fake data."""
     print("Generating realistic event marketplace data...")
     print("-" * 50)
 
+    # Step 1: Create admin user
     create_admin_user()
+    print()
 
+    # Step 2: Create users (ensure we have enough)
     users = create_users(40)
+    if not users:
+        print("FATAL: No users created. Aborting.")
+        return
+    print(f"Total users available: {len(users)}")
     print()
 
+    # Step 3: Create vendors (requires users)
     vendors = create_vendors(users, 15)
+    if not vendors:
+        print(
+            "No vendors created. Aborting further data generation (listings require vendors)."
+        )
+        return
+    print(f"Total vendors available: {len(vendors)}")
     print()
 
+    # Step 4: Create listings (requires vendors)
     listings = create_listings(vendors, 50)
+    if not listings:
+        print("No listings created. Aborting further data generation.")
+        return
+    print(f"Total listings available: {len(listings)}")
     print()
 
+    # Step 5: Add listing images
     add_listing_images(listings)
     print()
 
+    # Step 6: Create bookings (requires users and listings)
     bookings = create_bookings(users, listings, 70)
+    if not bookings:
+        print("No bookings created. Aborting further data generation.")
+        return
+    print(f"Total bookings available: {len(bookings)}")
     print()
 
+    # Step 7: Create payments (requires bookings)
     payments = create_payments(bookings)
+    print(f"Total payments available: {len(payments)}")
     print()
 
+    # Step 8: Create payouts (optional - requires payments)
     create_payouts(payments)
     print()
 
+    # Step 9: Create reviews (optional - requires bookings)
     create_reviews(bookings, 40)
     print()
 
+    # Step 10: Create chat rooms (optional)
     chat_rooms = create_chat_rooms(users, vendors, listings, bookings, 30)
+    print(f"Total chat rooms available: {len(chat_rooms)}")
     print()
 
+    # Step 11: Create messages (optional)
     create_messages(chat_rooms, users, 100)
     print()
 
@@ -630,4 +726,11 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    try:
+        run()
+    except Exception as e:
+        print(f"FATAL ERROR: {e}")
+        db.rollback()
+        raise
+    finally:
+        db.close()

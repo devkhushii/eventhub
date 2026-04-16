@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   Alert,
+  AppState,
 } from 'react-native';
 import * as bookingsApi from '../../api/bookings';
 import * as vendorsApi from '../../api/vendors';
@@ -15,14 +16,17 @@ import colors from '../../styles/colors';
 import { formatDate, formatCurrency } from '../../utils/helpers';
 import { useAuth } from '../../contexts/AuthContext';
 
+const POLLING_INTERVAL_MS = 8000;
+
 const STATUS_LABELS = {
   PENDING: 'Pending',
   APPROVED: 'Approved - Pay Now',
-  AWAITING_PAYMENT: 'Awaiting Payment',
+  AWAITING_ADVANCE: 'Awaiting Advance Payment',
   CONFIRMED: 'Confirmed',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
   REJECTED: 'Rejected',
+  AWAITING_FINAL_PAYMENT: 'Awaiting Final Payment',
 };
 
 const BookingDetailScreen = ({ navigation, route }) => {
@@ -63,9 +67,63 @@ const BookingDetailScreen = ({ navigation, route }) => {
     }
   };
 
+  const pollingIntervalRef = useRef(null);
+  const appStateRef = useRef(AppState.currentState);
+
+  const startPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      console.log('[BookingDetail] Polling already running');
+      return;
+    }
+
+    console.log('[BookingDetail] Starting polling for booking:', bookingId);
+    pollingIntervalRef.current = setInterval(async () => {
+      console.log('[BookingDetail] Polling for status update...');
+      try {
+        await fetchBooking();
+        
+        if (booking?.status === 'CONFIRMED' || booking?.status === 'COMPLETED') {
+          console.log('[BookingDetail] Booking confirmed, stopping polling');
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+        }
+      } catch (error) {
+        console.error('[BookingDetail] Polling error:', error);
+      }
+    }, POLLING_INTERVAL_MS);
+  }, [bookingId, booking?.status]);
+
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      console.log('[BookingDetail] Stopping polling');
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     fetchBooking();
-  }, [bookingId]);
+    startPolling();
+
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
+        console.log('[BookingDetail] App came to foreground');
+        fetchBooking();
+        startPolling();
+      } else if (nextAppState.match(/inactive|background/)) {
+        console.log('[BookingDetail] App went to background');
+        stopPolling();
+      }
+      appStateRef.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+      stopPolling();
+    };
+  }, [bookingId, startPolling, stopPolling]);
 
   const handleCancel = () => {
     Alert.alert(
@@ -246,9 +304,15 @@ const BookingDetailScreen = ({ navigation, route }) => {
             <Text style={styles.detailValue}>{formatCurrency(booking.total_price)}</Text>
           </View>
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Payment Status</Text>
-            <Text style={styles.detailValue}>{booking.payment_status || 'pending'}</Text>
+            <Text style={styles.detailLabel}>Advance Amount</Text>
+            <Text style={styles.detailValue}>{formatCurrency(booking.advance_amount) || 'Not paid yet'}</Text>
           </View>
+          {booking.remaining_amount !== undefined && (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Remaining Amount</Text>
+              <Text style={styles.detailValue}>{formatCurrency(booking.remaining_amount) || 'N/A'}</Text>
+            </View>
+          )}
           {booking.special_requests && (
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Special Requests</Text>

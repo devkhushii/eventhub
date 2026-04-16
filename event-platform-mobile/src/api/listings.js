@@ -1,9 +1,9 @@
 import apiClient from '../utils/apiClient';
 
 export const createListing = async (listingData) => {
-  const { 
-    title, description, listing_type, price, location, 
-    details, status 
+  const {
+    title, description, listing_type, price, location,
+    details, status
   } = listingData;
 
   if (!title || !title.trim()) {
@@ -29,7 +29,7 @@ export const createListing = async (listingData) => {
   };
 
   console.log('[Listings API] Creating listing:', JSON.stringify(payload));
-  const response = await apiClient.post('/listings', payload);
+  const response = await apiClient.post('/listings/', payload);
   return response.data;
 };
 
@@ -75,10 +75,10 @@ export const uploadListingImage = async (listingId, imageUri) => {
   console.log('[Listings API] Uploading image for listing:', listingId);
 
   const formData = new FormData();
-  
+
   const fileExtension = imageUri.split('.').pop()?.toLowerCase() || 'jpg';
   const mimeType = fileExtension === 'png' ? 'image/png' : 'image/jpeg';
-  
+
   formData.append('files', {
     uri: imageUri,
     type: mimeType,
@@ -159,13 +159,13 @@ export const getListingFields = async (listingType) => {
 
 export const getPublishedListings = async (skip = 0, limit = 20, filters = {}) => {
   console.log('[Listings API] Getting published listings:', { skip, limit, filters });
-  
+
   const page = Math.floor(skip / limit) + 1;
-  
+
   const params = new URLSearchParams();
   params.append('page', page.toString());
   params.append('limit', limit.toString());
-  
+
   if (filters.search) params.append('search', filters.search);
   if (filters.price_min) params.append('price_min', filters.price_min.toString());
   if (filters.price_max) params.append('price_max', filters.price_max.toString());
@@ -174,9 +174,9 @@ export const getPublishedListings = async (skip = 0, limit = 20, filters = {}) =
   if (filters.start_date) params.append('start_date', filters.start_date);
   if (filters.end_date) params.append('end_date', filters.end_date);
   if (filters.sort_by) params.append('sort_by', filters.sort_by);
-  
+
   console.log('[Listings API] Final URL params:', params.toString());
-  
+
   const response = await apiClient.get(`/listings/published?${params.toString()}`);
   return response.data;
 };

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   RefreshControl,
   TouchableOpacity,
   Alert,
+  AppState,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { getMyBookings } from '../../api/bookings';
@@ -15,8 +16,17 @@ import LoadingScreen from '../../components/LoadingScreen';
 import EmptyState from '../../components/EmptyState';
 import { colors, borderRadius } from '../../styles/colors';
 
+const POLLING_INTERVAL_MS = 10000;
+const VALID_SUCCESS_STATUSES = ['CONFIRMED', 'COMPLETED'];
+const FAILURE_STATUSES = ['CANCELLED', 'REJECTED'];
+
 const PAYMENT_BUTTON_STATES = {
   PENDING: {
+    label: 'Pay Now',
+    icon: '💳',
+    color: colors.primary,
+  },
+  APPROVED: {
     label: 'Pay Now',
     icon: '💳',
     color: colors.primary,
@@ -40,6 +50,16 @@ const PAYMENT_BUTTON_STATES = {
     label: 'Completed',
     icon: '🎉',
     color: colors.success,
+  },
+  CANCELLED: {
+    label: 'Cancelled',
+    icon: '❌',
+    color: colors.error,
+  },
+  REJECTED: {
+    label: 'Rejected',
+    icon: '❌',
+    color: colors.error,
   },
 };
 
@@ -82,6 +102,9 @@ const MyBookingsScreen = ({ navigation }) => {
     }
   };
 
+  const pollingIntervalRef = useRef(null);
+  const appStateRef = useRef(AppState.currentState);
+
   React.useEffect(() => {
     isMounted.current = true;
     return () => {
@@ -89,10 +112,81 @@ const MyBookingsScreen = ({ navigation }) => {
     };
   }, []);
 
+  const startAutoRefresh = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      console.log('[MyBookings] Auto-refresh already running');
+      return;
+    }
+
+    console.log('[MyBookings] Starting auto-refresh polling...');
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        const bookings = await getMyBookings();
+        const normalizedBookings = Array.isArray(bookings) 
+          ? bookings 
+          : bookings?.data || [];
+        
+        const hasPendingBooking = normalizedBookings.some(
+          b => b.status === 'AWAITING_ADVANCE' || b.status === 'AWAITING_FINAL_PAYMENT'
+        );
+
+        if (!hasPendingBooking) {
+          console.log('[MyBookings] No pending bookings, stopping auto-refresh');
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+          return;
+        }
+
+        console.log('[MyBookings] Auto-refresh polling...');
+        if (isMounted.current) {
+          setBookings(normalizedBookings);
+        }
+      } catch (error) {
+        console.error('[MyBookings] Auto-refresh error:', error);
+      }
+    }, POLLING_INTERVAL_MS);
+  }, []);
+
+  const stopAutoRefresh = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      console.log('[MyBookings] Stopping auto-refresh polling');
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
+        console.log('[MyBookings] App came to foreground, refreshing...');
+        fetchBookings();
+        startAutoRefresh();
+      } else if (nextAppState.match(/inactive|background/)) {
+        console.log('[MyBookings] App went to background, stopping auto-refresh');
+        stopAutoRefresh();
+      }
+      appStateRef.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+      stopAutoRefresh();
+    };
+  }, [startAutoRefresh, stopAutoRefresh]);
+
   useFocusEffect(
     useCallback(() => {
+      console.log('[MyBookings] Screen focused, refreshing bookings...');
       fetchBookings();
-    }, [])
+      startAutoRefresh();
+
+      return () => {
+        console.log('[MyBookings] Screen unfocused, stopping auto-refresh');
+        stopAutoRefresh();
+      };
+    }, [startAutoRefresh, stopAutoRefresh])
   );
 
   const handleRefresh = () => {

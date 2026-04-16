@@ -240,6 +240,7 @@ const PaymentScreen = ({ navigation, route }) => {
 
     console.log('[PaymentScreen] Processing payment verification...');
     setLoading(true);
+    setStep('verifying');
 
     try {
       const razorpayPaymentId = 'pay_' + Date.now();
@@ -256,17 +257,78 @@ const PaymentScreen = ({ navigation, route }) => {
 
       Alert.alert(
         'Payment Successful ✅',
-        `Your ${paymentType === 'ADVANCE' ? 'advance' : 'remaining'} payment has been processed!`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              console.log('[PaymentScreen] Navigating back to MyBookings');
-              navigation.navigate('MainTabs', { screen: 'Bookings' });
-            },
-          },
-        ]
+        'Verifying payment status...',
+        [{ text: 'OK' }]
       );
+      
+      const pollStartTime = Date.now();
+      const pollInterval = setInterval(async () => {
+        console.log('[PaymentScreen] Polling for status update...');
+        try {
+          const bookings = await bookingsApi.getMyBookings();
+          const updatedBooking = bookings.find(b => b.id === bookingId);
+          
+          if (!updatedBooking) {
+            console.log('[PaymentScreen] Booking not found in response');
+            return;
+          }
+
+          const status = updatedBooking.status;
+          console.log('[PaymentScreen] Poll check: status =', status);
+
+          if (status === 'CONFIRMED' || status === 'COMPLETED') {
+            clearInterval(pollInterval);
+            console.log('[PaymentScreen] Payment verified: status =', status);
+            Alert.alert(
+              'Payment Verified ✅',
+              `Your ${paymentType === 'ADVANCE' ? 'advance' : 'remaining'} payment has been confirmed! Booking is now ${status}.`,
+              [
+                {
+                  text: 'View Bookings',
+                  onPress: () => {
+                    setLoading(false);
+                    setStep('review');
+                    navigation.navigate('MainTabs', { screen: 'Bookings' });
+                  },
+                },
+              ]
+            );
+            return;
+          }
+
+          if (status === 'CANCELLED' || status === 'REJECTED') {
+            clearInterval(pollInterval);
+            console.log('[PaymentScreen] Payment failed: status =', status);
+            Alert.alert(
+              'Payment Failed',
+              `Your payment could not be processed. Status: ${status}`,
+              [{ text: 'OK', onPress: () => {
+                setLoading(false);
+                setStep('review');
+                navigation.navigate('MainTabs', { screen: 'Bookings' });
+              }}]
+            );
+            return;
+          }
+
+          const elapsedSeconds = Math.floor((Date.now() - pollStartTime) / 1000);
+          if (elapsedSeconds > 120) {
+            clearInterval(pollInterval);
+            console.log('[PaymentScreen] Polling timeout after 120s, navigating to bookings');
+            Alert.alert(
+              'Verification Pending',
+              'Your payment is being processed. Please check your bookings for status updates.',
+              [{ text: 'View Bookings', onPress: () => {
+                setLoading(false);
+                setStep('review');
+                navigation.navigate('MainTabs', { screen: 'Bookings' });
+              }}]
+            );
+          }
+        } catch (pollError) {
+          console.error('[PaymentScreen] Polling error:', pollError);
+        }
+      }, 3000);
     } catch (error) {
       console.error('[PaymentScreen] Verification failed:', error);
       
@@ -275,13 +337,15 @@ const PaymentScreen = ({ navigation, route }) => {
     } finally {
       if (isMounted.current) {
         setLoading(false);
+        setStep('review');
       }
     }
-  }, [paymentData, paymentType, navigation]);
+  }, [paymentData, paymentType, navigation, bookingId]);
 
   const simulatePayment = useCallback(async () => {
     console.log('[PaymentScreen] Simulating payment flow...');
     setLoading(true);
+    setStep('verifying');
 
     try {
       let orderId = paymentData?.order_id;
@@ -308,32 +372,69 @@ const PaymentScreen = ({ navigation, route }) => {
         [{ text: 'OK' }]
       );
       
-      let pollCount = 0;
-      const maxPolls = 12;
+      const pollStartTime = Date.now();
       const pollInterval = setInterval(async () => {
-        pollCount++;
-        console.log('[PaymentScreen] Polling for status update:', pollCount);
+        console.log('[PaymentScreen] Polling for status update...');
         try {
           const bookings = await bookingsApi.getMyBookings();
           const updatedBooking = bookings.find(b => b.id === bookingId);
-          if (updatedBooking && (updatedBooking.status === 'CONFIRMED' || updatedBooking.status === 'COMPLETED')) {
+          
+          if (!updatedBooking) {
+            console.log('[PaymentScreen] Booking not found in response');
+            return;
+          }
+
+          const status = updatedBooking.status;
+          console.log('[PaymentScreen] Poll check: status =', status);
+
+          if (status === 'CONFIRMED' || status === 'COMPLETED') {
             clearInterval(pollInterval);
+            console.log('[PaymentScreen] Payment verified: status =', status);
             Alert.alert(
               'Payment Verified ✅',
-              `Your ${paymentType === 'ADVANCE' ? 'advance' : 'remaining'} payment has been confirmed! Booking is now ${updatedBooking.status}.`,
+              `Your ${paymentType === 'ADVANCE' ? 'advance' : 'remaining'} payment has been confirmed! Booking is now ${status}.`,
               [
                 {
                   text: 'View Bookings',
-                  onPress: () => navigation.navigate('MainTabs', { screen: 'Bookings' }),
+                  onPress: () => {
+                    setLoading(false);
+                    setStep('review');
+                    navigation.navigate('MainTabs', { screen: 'Bookings' });
+                  },
                 },
               ]
             );
             return;
           }
-          if (pollCount >= maxPolls) {
+
+          if (status === 'CANCELLED' || status === 'REJECTED') {
             clearInterval(pollInterval);
-            console.log('[PaymentScreen] Max polls reached, navigating to bookings');
-            navigation.navigate('MainTabs', { screen: 'Bookings' });
+            console.log('[PaymentScreen] Payment failed: status =', status);
+            Alert.alert(
+              'Payment Failed',
+              `Your payment could not be processed. Status: ${status}`,
+              [{ text: 'OK', onPress: () => {
+                setLoading(false);
+                setStep('review');
+                navigation.navigate('MainTabs', { screen: 'Bookings' });
+              }}]
+            );
+            return;
+          }
+
+          const elapsedSeconds = Math.floor((Date.now() - pollStartTime) / 1000);
+          if (elapsedSeconds > 120) {
+            clearInterval(pollInterval);
+            console.log('[PaymentScreen] Polling timeout after 120s, navigating to bookings');
+            Alert.alert(
+              'Verification Pending',
+              'Your payment is being processed. Please check your bookings for status updates.',
+              [{ text: 'View Bookings', onPress: () => {
+                setLoading(false);
+                setStep('review');
+                navigation.navigate('MainTabs', { screen: 'Bookings' });
+              }}]
+            );
           }
         } catch (pollError) {
           console.error('[PaymentScreen] Polling error:', pollError);
@@ -343,7 +444,10 @@ const PaymentScreen = ({ navigation, route }) => {
       console.error('[PaymentScreen] Simulation failed:', error);
       Alert.alert('Error', 'Payment simulation failed: ' + (error.message || 'Unknown error'));
     } finally {
-      setLoading(false);
+      if (isMounted.current) {
+        setLoading(false);
+        setStep('review');
+      }
     }
   }, [paymentType, navigation, paymentData, bookingId]);
 
@@ -564,6 +668,21 @@ const PaymentScreen = ({ navigation, route }) => {
               size="large"
             />
           </>
+        )}
+
+        {step === 'verifying' && (
+          <View style={styles.verifyingContainer}>
+            <View style={styles.verifyingContent}>
+              <Text style={styles.verifyingIcon}>🔄</Text>
+              <Text style={styles.verifyingTitle}>Verifying your payment...</Text>
+              <Text style={styles.verifyingText}>
+                Please wait while we confirm your payment with the server.
+              </Text>
+              <Text style={styles.verifyingSubtext}>
+                This may take a few seconds.
+              </Text>
+            </View>
+          </View>
         )}
 
         {step === 'checkout' && paymentData && (
@@ -831,6 +950,38 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
     lineHeight: 20,
+  },
+  verifyingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+    minHeight: 400,
+  },
+  verifyingContent: {
+    alignItems: 'center',
+  },
+  verifyingIcon: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  verifyingTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  verifyingText: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  verifyingSubtext: {
+    fontSize: 14,
+    color: colors.textMuted,
+    textAlign: 'center',
   },
 });
 

@@ -72,54 +72,33 @@ def verify_payment_status_task(self, payment_id: str):
             )
             return {"status": "error", "message": "No Razorpay order ID"}
 
-        # Check payment status from Razorpay
+        # Check payment status from Razorpay using Payments API
         logger.info(
             f"[PaymentVerifyTask] Fetching payment status from Razorpay for order: {payment.razorpay_order_id}"
         )
 
         try:
-            # Try to fetch payment by order_id
-            razorpay_order = client.order.fetch(payment.razorpay_order_id)
+            # Use Razorpay Payments API - correct endpoint: /v1/orders/{order_id}/payments
+            razorpay_payments = client.order.payments(payment.razorpay_order_id)
             logger.info(
-                f"[PaymentVerifyTask] Razorpay order response: {razorpay_order}"
+                f"[PaymentVerifyTask] Razorpay payments response: {razorpay_payments}"
             )
 
-            # Check if payments array has any captured payments
-            payments = razorpay_order.get("payments", [])
+            # Check if payments array has any payments
+            payment_count = razorpay_payments.get("count", 0)
 
-            if payments and len(payments) > 0:
+            if payment_count > 0:
                 # Get the most recent payment
-                payment_data = payments[0]
+                payment_data = razorpay_payments["items"][0]
                 razorpay_payment_id = payment_data.get("id")
                 razorpay_status = payment_data.get("status")
-                razorpay_authorized = payment_data.get("authorized", False)
-                razorpay_captured = payment_data.get("captured", False)
 
                 logger.info(
-                    f"[PaymentVerifyTask] Razorpay payment found: id={razorpay_payment_id}, status={razorpay_status}, authorized={razorpay_authorized}, captured={razorpay_captured}"
+                    f"[PaymentVerifyTask] Razorpay payment found: id={razorpay_payment_id}, status={razorpay_status}"
                 )
 
-                # Also try to fetch payment directly by payment_id if we have one
-                if razorpay_payment_id:
-                    try:
-                        direct_payment = client.payment.fetch(razorpay_payment_id)
-                        logger.info(
-                            f"[PaymentVerifyTask] Direct payment fetch: {direct_payment}"
-                        )
-                        razorpay_status = direct_payment.get("status", razorpay_status)
-                        razorpay_authorized = direct_payment.get(
-                            "authorized", razorpay_authorized
-                        )
-                        razorpay_captured = direct_payment.get(
-                            "captured", razorpay_captured
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            f"[PaymentVerifyTask] Direct payment fetch failed: {e}"
-                        )
-
                 # Check if payment is captured (success)
-                if razorpay_captured or razorpay_status == "captured":
+                if razorpay_status == "captured":
                     logger.info(
                         f"[PaymentVerifyTask] Payment is captured! Updating payment and booking status..."
                     )
@@ -151,19 +130,19 @@ def verify_payment_status_task(self, payment_id: str):
                         "message": "Payment captured and verified",
                     }
 
-                elif razorpay_status == "failed" or razorpay_status == "failed":
+                elif razorpay_status == "failed":
                     logger.warning(f"[PaymentVerifyTask] Payment failed in Razorpay")
                     payment.status = PaymentStatus.FAILED
                     db.commit()
                     return {"status": "failed", "message": "Payment failed"}
                 else:
-                    # Payment not yet captured - need to retry
+                    # Payment still processing (authorized, etc.)
                     logger.info(
-                        f"[PaymentVerifyTask] Payment not captured yet, status={razorpay_status}, will retry..."
+                        f"[PaymentVerifyTask] Payment still processing, status={razorpay_status}, will retry..."
                     )
             else:
                 logger.info(
-                    f"[PaymentVerifyTask] No payments found in Razorpay order, order may still be pending"
+                    f"[PaymentVerifyTask] No payments found for order, order may still be pending"
                 )
 
         except Exception as e:

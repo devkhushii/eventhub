@@ -13,6 +13,10 @@ from app.shared.exceptions import BaseAppException
 from app.db.init_db import init_db
 from app.api.v1.router import api_router
 
+# CRITICAL: Import all models early to register them with SQLAlchemy
+# This ensures all models are loaded in both FastAPI app AND Celery worker
+import app.db.models  # noqa: F401
+
 settings = get_settings()
 
 # ---------------------------------------------------
