@@ -1,6 +1,14 @@
 # app/modules/payments/models.py
 
-from sqlalchemy import Column, Integer, String, ForeignKey, Enum, DateTime
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    ForeignKey,
+    Enum,
+    DateTime,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
@@ -37,6 +45,9 @@ class PayoutStatus(str, enum.Enum):
 
 class Payment(Base):
     __tablename__ = "payments"
+    __table_args__ = (
+        UniqueConstraint("razorpay_payment_id", name="uq_razorpay_payment_id"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     booking_id = Column(UUID(as_uuid=True), ForeignKey("bookings.id"))
@@ -51,8 +62,8 @@ class Payment(Base):
     vendor_released_amount = Column(Integer, default=0)
     escrow_amount = Column(Integer, default=0)
 
-    razorpay_order_id = Column(String)
-    razorpay_payment_id = Column(String)
+    razorpay_order_id = Column(String, index=True)
+    razorpay_payment_id = Column(String, nullable=True)
 
     payment_link_id = Column(String, nullable=True)
     payment_link_url = Column(String, nullable=True)

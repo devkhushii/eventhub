@@ -5,7 +5,7 @@ const PORT = '8000';
 const API_VERSION = 'api/v1';
 const WS_PATH = '';
 
-const DEV_HOST_IP = '10.88.4.201';
+const DEV_HOST_IP = '10.42.180.201';
 
 export const API_ENV = {
   ANDROID_EMULATOR: `http://10.0.2.2:${PORT}/${API_VERSION}`,
@@ -23,7 +23,7 @@ const getBaseUrl = () => {
 
   const deviceId = Constants.systemVersion;
   const isSimulator = !deviceId || deviceId.includes('.');
-  
+
   let baseUrl;
   if (Platform.OS === 'ios') {
     baseUrl = isSimulator ? API_ENV.IOS_SIMULATOR : API_ENV.IOS_DEVICE;
@@ -58,7 +58,7 @@ export const getImageUrl = (path) => {
   const baseWithoutApi = BASE_URL.replace('/api/v1', '');
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   const fullUrl = `${baseWithoutApi}${normalizedPath}`;
-  
+
   console.log('[IMAGE URL] Generated URL:', fullUrl);
   return fullUrl;
 };
@@ -94,7 +94,7 @@ export const getWebSocketUrl = (endpoint, queryParams = '') => {
   const baseUrl = WS_BASE_URL;
   const separator = queryParams && !queryParams.startsWith('?') ? '?' : '';
   const fullUrl = `${baseUrl}${endpoint}${separator}${queryParams}`;
-  
+
   console.log('[Config] 📡 WebSocket URL:', fullUrl);
   return fullUrl;
 };

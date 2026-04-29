@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { getMyBookings } from '../api/bookings';
 
-const VALID_SUCCESS_STATUSES = ['CONFIRMED', 'COMPLETED'];
+const VALID_SUCCESS_STATUSES = ['CONFIRMED', 'AWAITING_FINAL_PAYMENT', 'COMPLETED'];
 const FAILURE_STATUSES = ['CANCELLED', 'REJECTED'];
 const POLL_INTERVAL_MS = 3000;
+const DEFAULT_TIMEOUT_MS = 120000;
 
 export const useBookingStatusPolling = (options = {}) => {
   const {
@@ -12,18 +13,37 @@ export const useBookingStatusPolling = (options = {}) => {
     onVerificationComplete,
     onVerificationFailed,
     startImmediately = false,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
   } = options;
 
   const [currentStatus, setCurrentStatus] = useState(null);
   const [isPolling, setIsPolling] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [pollCount, setPollCount] = useState(0);
-  const [lastError, setLastError] = useRef(null);
+  const [lastError, setLastError] = useState(null);
+  const [hasTimedOut, setHasTimedOut] = useState(false);
 
   const pollingIntervalRef = useRef(null);
+  const timeoutTimeoutRef = useRef(null);
   const isMountedRef = useRef(true);
   const hasCalledCallbackRef = useRef(false);
   const pollCountRef = useRef(0);
+
+  const onStatusChangeRef = useRef(onStatusChange);
+  const onVerificationCompleteRef = useRef(onVerificationComplete);
+  const onVerificationFailedRef = useRef(onVerificationFailed);
+
+  useEffect(() => {
+    onStatusChangeRef.current = onStatusChange;
+  }, [onStatusChange]);
+
+  useEffect(() => {
+    onVerificationCompleteRef.current = onVerificationComplete;
+  }, [onVerificationComplete]);
+
+  useEffect(() => {
+    onVerificationFailedRef.current = onVerificationFailed;
+  }, [onVerificationFailed]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -31,6 +51,22 @@ export const useBookingStatusPolling = (options = {}) => {
       isMountedRef.current = false;
       stopPolling();
     };
+  }, []);
+
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      console.log('[useBookingStatusPolling] Stopping polling, total polls:', pollCountRef.current);
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    if (timeoutTimeoutRef.current) {
+      clearTimeout(timeoutTimeoutRef.current);
+      timeoutTimeoutRef.current = null;
+    }
+    setIsPolling(false);
+    setIsVerifying(false);
+    setHasTimedOut(false);
+    console.log('[useBookingStatusPolling] Polling stopped');
   }, []);
 
   const startPolling = useCallback(() => {
@@ -49,7 +85,17 @@ export const useBookingStatusPolling = (options = {}) => {
     setIsVerifying(true);
     setPollCount(0);
     setLastError(null);
+    setHasTimedOut(false);
     hasCalledCallbackRef.current = false;
+    pollCountRef.current = 0;
+
+    timeoutTimeoutRef.current = setTimeout(() => {
+      if (isMountedRef.current && pollingIntervalRef.current) {
+        console.log('[useBookingStatusPolling] Polling timeout reached');
+        setHasTimedOut(true);
+        stopPolling();
+      }
+    }, timeoutMs);
 
     pollingIntervalRef.current = setInterval(async () => {
       if (!isMountedRef.current) {
@@ -59,8 +105,9 @@ export const useBookingStatusPolling = (options = {}) => {
       }
 
       try {
+        pollCountRef.current += 1;
         setPollCount(prev => prev + 1);
-        console.log('[useBookingStatusPolling] Poll check #', pollCount + 1, 'for booking:', bookingId);
+        console.log('[useBookingStatusPolling] Poll check #', pollCountRef.current, 'for booking:', bookingId);
 
         const bookings = await getMyBookings();
         const updatedBooking = Array.isArray(bookings) 
@@ -76,18 +123,17 @@ export const useBookingStatusPolling = (options = {}) => {
         setCurrentStatus(newStatus);
         console.log('[useBookingStatusPolling] Poll check: status =', newStatus);
 
-        if (onStatusChange) {
-          onStatusChange(newStatus, updatedBooking);
+        if (onStatusChangeRef.current) {
+          onStatusChangeRef.current(newStatus, updatedBooking);
         }
 
         if (VALID_SUCCESS_STATUSES.includes(newStatus)) {
           console.log('[useBookingStatusPolling] Payment verified: status =', newStatus);
           stopPolling();
-          setIsVerifying(false);
           
-          if (!hasCalledCallbackRef.current && onVerificationComplete) {
+          if (!hasCalledCallbackRef.current && onVerificationCompleteRef.current) {
             hasCalledCallbackRef.current = true;
-            onVerificationComplete(newStatus, updatedBooking);
+            onVerificationCompleteRef.current(newStatus, updatedBooking);
           }
           return;
         }
@@ -95,11 +141,10 @@ export const useBookingStatusPolling = (options = {}) => {
         if (FAILURE_STATUSES.includes(newStatus)) {
           console.log('[useBookingStatusPolling] Payment failed: status =', newStatus);
           stopPolling();
-          setIsVerifying(false);
           
-          if (!hasCalledCallbackRef.current && onVerificationFailed) {
+          if (!hasCalledCallbackRef.current && onVerificationFailedRef.current) {
             hasCalledCallbackRef.current = true;
-            onVerificationFailed(newStatus, updatedBooking);
+            onVerificationFailedRef.current(newStatus, updatedBooking);
           }
           return;
         }
@@ -115,18 +160,7 @@ export const useBookingStatusPolling = (options = {}) => {
     }, POLL_INTERVAL_MS);
 
     console.log('[useBookingStatusPolling] Polling interval set:', POLL_INTERVAL_MS, 'ms');
-  }, [bookingId, onStatusChange, onVerificationComplete, onVerificationFailed]);
-
-  const stopPolling = useCallback(() => {
-    if (pollingIntervalRef.current) {
-      console.log('[useBookingStatusPolling] Stopping polling, total polls:', pollCountRef.current);
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-      setIsPolling(false);
-      setIsVerifying(false);
-      console.log('[useBookingStatusPolling] Polling stopped');
-    }
-  }, []);
+  }, [bookingId, stopPolling, timeoutMs]);
 
   useEffect(() => {
     if (startImmediately && bookingId) {
@@ -144,6 +178,7 @@ export const useBookingStatusPolling = (options = {}) => {
     isVerifying,
     pollCount,
     lastError,
+    hasTimedOut,
     startPolling,
     stopPolling,
   };

@@ -25,29 +25,24 @@ def send_verification_email_task(self, email_to: str, token: str):
         raise self.retry(exc=exc, countdown=60)
 
 
-@celery_app.task(bind=True, max_retries=6)
+@celery_app.task(bind=True, max_retries=1)
 def verify_payment_status_task(self, payment_id: str):
     """
-    Background job to periodically check payment status until captured.
+    Background job to check payment status - acts as FALLBACK only.
 
-    Runs with retries:
-    - Retry 1: after 10 seconds
-    - Retry 2: after 20 seconds
-    - Retry 3: after 30 seconds
-    - Retry 4: after 45 seconds
-    - Retry 5: after 60 seconds
-    - Retry 6: after 90 seconds
+    For SDK flow: verifyPayment API is PRIMARY - this task is only a fallback
+    if user abandons the payment after opening SDK.
 
-    Total wait time: up to ~4.5 minutes before giving up.
+    This task does NOT wait for webhook - webhook is optional for SDK flow.
     """
     from app.db.session import SessionLocal
     from app.modules.payments.repository import PaymentRepository
     from app.modules.payments.utils import client
-    from app.modules.payments.service import PaymentService
     from app.modules.payments.models import Payment, PaymentStatus
 
+    retry_count = self.request.retries + 1
     logger.info(
-        f"[PaymentVerifyTask] Starting task for payment_id={payment_id}, attempt={self.request.retries + 1}"
+        f"[Celery] Starting fallback check: db_payment_id={payment_id}, retry_count={retry_count}"
     )
 
     db = SessionLocal()
@@ -55,115 +50,98 @@ def verify_payment_status_task(self, payment_id: str):
         payment = PaymentRepository.get_by_id(db, payment_id)
 
         if not payment:
-            logger.error(f"[PaymentVerifyTask] Payment not found: {payment_id}")
+            logger.error(f"[Celery] Payment not found: db_payment_id={payment_id}")
             return {"status": "error", "message": "Payment not found"}
 
+        db.refresh(payment)
+
         logger.info(
-            f"[PaymentVerifyTask] Payment found: id={payment.id}, razorpay_order_id={payment.razorpay_order_id}, current_status={payment.status}"
+            f"[Celery] db_payment_id={payment.id}, razorpay_order_id={payment.razorpay_order_id}, "
+            f"razorpay_payment_id={payment.razorpay_payment_id}, current_status={payment.status}"
         )
 
         if payment.status == PaymentStatus.SUCCESS:
-            logger.info(f"[PaymentVerifyTask] Payment already SUCCESS, skipping")
-            return {"status": "success", "message": "Payment already verified"}
-
-        if not payment.razorpay_order_id:
-            logger.warning(
-                f"[PaymentVerifyTask] No razorpay_order_id for payment {payment_id}, cannot verify"
+            logger.info(
+                f"[Celery] ✅ Payment already SUCCESS, skipping. db_payment_id={payment.id}"
             )
-            return {"status": "error", "message": "No Razorpay order ID"}
+            return {
+                "status": "success",
+                "message": "Payment already verified",
+            }
 
-        # Check payment status from Razorpay using Payments API
+        if payment.status == PaymentStatus.FAILED:
+            logger.info(
+                f"[Celery] Payment already FAILED, skipping. db_payment_id={payment.id}"
+            )
+            return {"status": "failed", "message": "Payment already failed"}
+
+        if not payment.razorpay_payment_id:
+            logger.warning(
+                f"[Celery] ⚠️ razorpay_payment_id is None - user may still complete via SDK. "
+                f"db_payment_id={payment.id}, razorpay_order_id={payment.razorpay_order_id}, "
+                f"retry_count={retry_count}"
+            )
+
+            if retry_count == 1:
+                logger.info(
+                    f"[Celery] One final check in 5 minutes - if no payment_id, mark as abandoned"
+                )
+                raise self.retry(
+                    exc=Exception("Waiting for SDK completion"), countdown=300
+                )
+
+            logger.error(
+                f"[Celery] No payment_id after timeout → marking as ABANDONED. "
+                f"db_payment_id={payment.id}"
+            )
+            payment.status = PaymentStatus.FAILED
+            payment.razorpay_payment_id = f"ABANDONED_{payment.razorpay_order_id}"
+            db.commit()
+            return {
+                "status": "abandoned",
+                "message": "Payment abandoned - timed out waiting for SDK",
+            }
+
         logger.info(
-            f"[PaymentVerifyTask] Fetching payment status from Razorpay for order: {payment.razorpay_order_id}"
+            f"[Celery] Payment has razorpay_payment_id: checking status. "
+            f"razorpay_payment_id={payment.razorpay_payment_id}"
         )
 
         try:
-            # Use Razorpay Payments API - correct endpoint: /v1/orders/{order_id}/payments
-            razorpay_payments = client.order.payments(payment.razorpay_order_id)
+            razorpay_payment = client.payment.fetch(payment.razorpay_payment_id)
+            razorpay_status = razorpay_payment.get("status")
             logger.info(
-                f"[PaymentVerifyTask] Razorpay payments response: {razorpay_payments}"
+                f"[Celery] Razorpay payment status: id={payment.razorpay_payment_id}, status={razorpay_status}"
             )
-
-            # Check if payments array has any payments
-            payment_count = razorpay_payments.get("count", 0)
-
-            if payment_count > 0:
-                # Get the most recent payment
-                payment_data = razorpay_payments["items"][0]
-                razorpay_payment_id = payment_data.get("id")
-                razorpay_status = payment_data.get("status")
-
-                logger.info(
-                    f"[PaymentVerifyTask] Razorpay payment found: id={razorpay_payment_id}, status={razorpay_status}"
-                )
-
-                # Check if payment is captured (success)
-                if razorpay_status == "captured":
-                    logger.info(
-                        f"[PaymentVerifyTask] Payment is captured! Updating payment and booking status..."
-                    )
-
-                    # Update payment record
-                    payment.status = PaymentStatus.SUCCESS
-                    payment.razorpay_payment_id = razorpay_payment_id
-                    db.commit()
-
-                    # Update booking status
-                    booking = payment.booking
-                    if booking:
-                        from app.modules.bookings.models import BookingStatus
-
-                        if payment.payment_type.value == "ADVANCE":
-                            booking.status = BookingStatus.CONFIRMED
-                            logger.info(
-                                f"[PaymentVerifyTask] Booking {booking.id} status updated to CONFIRMED"
-                            )
-                        elif payment.payment_type.value == "FINAL":
-                            booking.status = BookingStatus.COMPLETED
-                            logger.info(
-                                f"[PaymentVerifyTask] Booking {booking.id} status updated to COMPLETED"
-                            )
-                        db.commit()
-
-                    return {
-                        "status": "success",
-                        "message": "Payment captured and verified",
-                    }
-
-                elif razorpay_status == "failed":
-                    logger.warning(f"[PaymentVerifyTask] Payment failed in Razorpay")
-                    payment.status = PaymentStatus.FAILED
-                    db.commit()
-                    return {"status": "failed", "message": "Payment failed"}
-                else:
-                    # Payment still processing (authorized, etc.)
-                    logger.info(
-                        f"[PaymentVerifyTask] Payment still processing, status={razorpay_status}, will retry..."
-                    )
-            else:
-                logger.info(
-                    f"[PaymentVerifyTask] No payments found for order, order may still be pending"
-                )
-
         except Exception as e:
-            logger.error(f"[PaymentVerifyTask] Error fetching from Razorpay: {e}")
+            logger.error(f"[Celery] Error fetching payment: {e}")
+            return {"status": "error", "message": "Failed to verify payment"}
 
-        # Payment not yet captured - schedule retry with exponential backoff
-        retry_countdown = (
-            [10, 20, 30, 45, 60, 90][self.request.retries]
-            if self.request.retries < 6
-            else 90
-        )
-        logger.info(
-            f"[PaymentVerifyTask] Scheduling retry {self.request.retries + 1} in {retry_countdown} seconds"
-        )
-        raise self.retry(
-            exc=Exception("Payment not yet captured"), countdown=retry_countdown
-        )
+        if razorpay_status == "captured":
+            payment.status = PaymentStatus.SUCCESS
+            db.commit()
+            logger.info(f"[Celery] Payment captured: {payment.id}")
+            return {"status": "success", "message": "Payment captured via SDK"}
+        elif razorpay_status == "failed":
+            payment.status = PaymentStatus.FAILED
+            db.commit()
+            return {"status": "failed", "message": "Payment failed"}
+        else:
+            if retry_count == 1:
+                raise self.retry(
+                    exc=Exception("Payment not yet captured"), countdown=300
+                )
+            payment.status = PaymentStatus.FAILED
+            db.commit()
+            return {"status": "abandoned", "message": "Payment timed out"}
 
-    except Exception as exc:
-        logger.error(f"[PaymentVerifyTask] Task failed: {exc}")
-        raise self.retry(exc=exc, countdown=30)
+    except (celery_app.backend.exception_to_python.__class__, Exception) as exc:
+        # Re-raise Celery retry/control exceptions so retry mechanism works
+        from celery.exceptions import Retry, MaxRetriesExceededError
+        if isinstance(exc, (Retry, MaxRetriesExceededError)):
+            raise
+        logger.error(f"[Celery] Task failed: {exc}")
+        return {"status": "error", "message": str(exc)}
     finally:
         db.close()
 

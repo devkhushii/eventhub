@@ -53,18 +53,28 @@ const STATUS_CONFIG = {
   },
 };
 
-const StatusBadge = ({ status, size = 'medium', showIcon = true }) => {
+const StatusBadge = ({ status, size = 'medium', showIcon = true, advancePaid = false }) => {
   if (!status) {
     return null;
   }
 
   const statusUpper = status.toUpperCase();
-  const config = STATUS_CONFIG[statusUpper] || {
+  let config = STATUS_CONFIG[statusUpper] || {
     label: status,
     backgroundColor: colors.surfaceLight,
     textColor: colors.textMuted,
     icon: '•',
   };
+
+  // When advance is paid and awaiting final payment, show confirmed styling
+  if (statusUpper === 'AWAITING_FINAL_PAYMENT' && advancePaid) {
+    config = {
+      label: 'Booking Confirmed',
+      backgroundColor: colors.successLight,
+      textColor: colors.success,
+      icon: '✅',
+    };
+  }
 
   const getSizeStyles = () => {
     switch (size) {

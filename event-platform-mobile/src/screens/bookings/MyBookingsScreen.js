@@ -37,12 +37,12 @@ const PAYMENT_BUTTON_STATES = {
     color: colors.primary,
   },
   CONFIRMED: {
-    label: 'Advance Paid',
-    icon: '✅',
-    color: colors.success,
+    label: 'Pay Remaining',
+    icon: '💰',
+    color: colors.primary,
   },
   AWAITING_FINAL_PAYMENT: {
-    label: 'Pay Remaining',
+    label: 'Confirmed ✅ Pay Remaining',
     icon: '💰',
     color: colors.primary,
   },
@@ -213,7 +213,7 @@ const MyBookingsScreen = ({ navigation }) => {
         totalPrice: booking.total_price,
         listingTitle: booking.listing?.title || 'Event Booking',
       });
-    } else if (status === 'AWAITING_FINAL_PAYMENT') {
+    } else if (status === 'CONFIRMED' || status === 'AWAITING_FINAL_PAYMENT') {
       console.log('[MyBookings] Navigating to Payment - FINAL');
       const remainingAmount = booking.total_price - (booking.advance_amount || booking.total_price * 0.3);
       navigation.navigate('Payment', {
@@ -246,7 +246,7 @@ const MyBookingsScreen = ({ navigation }) => {
       return null;
     }
     
-    console.log('[MyBookings] Rendering booking:', { id: item.id, status: item.status });
+    console.log('[MyBookings] Rendering booking:', { id: item.id, status: item.status, advance_paid: item.advance_paid });
     
     const paymentConfig = getPaymentButtonConfig(item.status);
     const isPaymentProcessing = processingPayment === item.id;
@@ -266,7 +266,7 @@ const MyBookingsScreen = ({ navigation }) => {
               isPaymentProcessing && styles.paymentButtonDisabled,
             ]}
             onPress={() => handlePaymentAction(item)}
-            disabled={isPaymentProcessing || item.status === 'CONFIRMED' || item.status === 'COMPLETED'}
+            disabled={isPaymentProcessing || item.status === 'COMPLETED'}
             activeOpacity={0.8}
           >
             <Text style={styles.paymentButtonIcon}>{paymentConfig.icon}</Text>

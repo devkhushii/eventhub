@@ -54,6 +54,7 @@ class BookingResponse(BaseModel):
     total_price: float
     status: BookingStatus
     advance_amount: Optional[float] = None
+    advance_paid: bool = False
     special_request: Optional[str]
     created_at: datetime
     updated_at: Optional[datetime] = None

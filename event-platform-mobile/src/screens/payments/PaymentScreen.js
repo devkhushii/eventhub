@@ -6,12 +6,12 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import * as Linking from 'expo-linking';
 import { createPaymentOrder, verifyPayment } from '../../api/payments';
 import * as bookingsApi from '../../api/bookings';
 import { RAZORPAY_KEY_ID } from '../../utils/constants';
+import useBookingStatusPolling from '../../hooks/useBookingStatusPolling';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
 import colors, { borderRadius } from '../../styles/colors';
@@ -22,6 +22,8 @@ try {
 } catch (e) {
   console.log('[PaymentScreen] Razorpay not installed, using simulation');
 }
+
+const isSimulation = !RazorpayCheckout;
 
 const formatCurrency = (amount) => {
   if (!amount && amount !== 0) return '';
@@ -41,14 +43,22 @@ const formatDate = (dateString) => {
   });
 };
 
+const STEP = {
+  REVIEW: 'review',
+  CHECKOUT: 'checkout',
+  VERIFYING: 'verifying',
+  SUCCESS: 'success',
+  FAILURE: 'failure',
+};
+
 const PaymentScreen = ({ navigation, route }) => {
-  const { 
-    bookingId, 
-    paymentType, 
-    amount, 
-    totalPrice, 
+  const {
+    bookingId,
+    paymentType,
+    amount,
+    totalPrice,
     listingTitle,
-    eventDate 
+    eventDate
   } = route.params || {};
 
   console.log('[PaymentScreen] Params:', {
@@ -58,24 +68,107 @@ const PaymentScreen = ({ navigation, route }) => {
     totalPrice,
     listingTitle,
     eventDate,
+    isSimulation,
   });
 
+  const [step, setStep] = useState(STEP.REVIEW);
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState('review');
   const [paymentData, setPaymentData] = useState(null);
-  const isMounted = useRef(true);
+  const isMountedRef = useRef(true);
 
-  React.useEffect(() => {
-    isMounted.current = true;
+  useEffect(() => {
+    isMountedRef.current = true;
     return () => {
-      isMounted.current = false;
+      isMountedRef.current = false;
     };
   }, []);
 
-  const handleCreateOrder = useCallback(async () => {
+  const navigateToBookings = useCallback(() => {
+    navigation.navigate('MainTabs', { screen: 'Bookings' });
+  }, [navigation]);
+
+  const handleVerificationComplete = useCallback((status, booking) => {
+    if (!isMountedRef.current) return;
+
+    console.log('[PaymentScreen] Verification complete, status:', status);
+    Alert.alert(
+      'Payment Verified',
+      `Your ${paymentType === 'ADVANCE' ? 'advance' : 'remaining'} payment has been confirmed! Booking is now ${status}.`,
+      [
+        {
+          text: 'View Bookings',
+          onPress: () => {
+            setStep(STEP.REVIEW);
+            navigateToBookings();
+          },
+        },
+      ]
+    );
+  }, [paymentType, navigateToBookings]);
+
+  const handleVerificationFailed = useCallback((status, booking) => {
+    if (!isMountedRef.current) return;
+
+    console.log('[PaymentScreen] Verification failed, status:', status);
+    Alert.alert(
+      'Payment Failed',
+      `Your payment could not be processed. Status: ${status}`,
+      [
+        {
+          text: 'OK',
+          onPress: () => {
+            setStep(STEP.REVIEW);
+            navigateToBookings();
+          },
+        },
+      ]
+    );
+  }, [navigateToBookings]);
+
+  const handlePollingTimeout = useCallback(() => {
+    if (!isMountedRef.current) return;
+
+    console.log('[PaymentScreen] Polling timeout reached');
+    Alert.alert(
+      'Verification Pending',
+      'Your payment is being processed. Please check your bookings for status updates.',
+      [
+        {
+          text: 'View Bookings',
+          onPress: () => {
+            setStep(STEP.REVIEW);
+            navigateToBookings();
+          },
+        },
+        {
+          text: 'Stay Here',
+          style: 'cancel',
+        },
+      ]
+    );
+  }, [navigateToBookings]);
+
+  const {
+    startPolling,
+    isVerifying,
+    hasTimedOut,
+  } = useBookingStatusPolling({
+    bookingId,
+    onVerificationComplete: handleVerificationComplete,
+    onVerificationFailed: handleVerificationFailed,
+    startImmediately: false,
+  });
+
+  useEffect(() => {
+    if (hasTimedOut) {
+      handlePollingTimeout();
+    }
+  }, [hasTimedOut, handlePollingTimeout]);
+
+  const createOrder = useCallback(async () => {
     if (!bookingId || !paymentType || !amount) {
       Alert.alert('Error', 'Missing payment information');
-      return;
+      return null;
     }
 
     console.log('[PaymentScreen] Creating payment order...');
@@ -85,275 +178,233 @@ const PaymentScreen = ({ navigation, route }) => {
       const response = await createPaymentOrder(bookingId, paymentType);
       console.log('[PaymentScreen] Order created:', response);
 
-      if (!isMounted.current) return;
+      if (!isMountedRef.current) return null;
 
       setPaymentData(response);
-      setStep('checkout');
+      setStep(STEP.CHECKOUT);
+      return response;
     } catch (error) {
       console.error('[PaymentScreen] Order creation failed:', error);
-      
-      if (!isMounted.current) return;
+
+      if (!isMountedRef.current) return null;
 
       if (error.response?.status === 409) {
-        console.log('[PaymentScreen] Payment already exists, fetching booking...');
-        
-        try {
-          const bookings = await bookingsApi.getMyBookings();
-          const booking = bookings.find(b => b.id === bookingId);
-          
-          if (booking) {
-            console.log('[PaymentScreen] Booking status:', booking.status);
-            
-            if (booking.status === 'CONFIRMED' || booking.status === 'COMPLETED') {
-              Alert.alert(
-                'Payment Completed ✅',
-                `Your payment has been processed successfully. Booking is ${booking.status}.`,
-                [{ text: 'View Bookings', onPress: () => navigation.navigate('MainTabs', { screen: 'Bookings' }) }]
-              );
-              return;
-            }
-            
-            if (booking.status === 'AWAITING_ADVANCE') {
-              const advanceAmount = booking.advance_amount || amount;
-              
-              setPaymentData({
-                order_id: `pending_${bookingId}`,
-                amount: advanceAmount,
-                payment_link: null,
-                payment_type: paymentType,
-                existing: true,
-                status: 'AWAITING_ADVANCE',
-              });
-              setStep('checkout');
-              
-              Alert.alert(
-                'Payment Pending ⚠️',
-                `Your advance payment of ${formatCurrency(advanceAmount)} is not completed yet.\n\nPlease complete the payment to confirm your booking.`,
-                [{ text: 'Continue to Payment' }]
-              );
-              return;
-            }
-            
-            setPaymentData({
-              order_id: `existing_${bookingId}`,
-              amount: booking.advance_amount || amount,
-              payment_link: null,
-              payment_type: paymentType,
-              existing: true,
-            });
-            setStep('checkout');
-            
-            Alert.alert(
-              'Continue Payment',
-              `Your booking status: ${booking.status}.\n\nPlease complete your payment to continue.`,
-              [{ text: 'Continue' }]
-            );
-            return;
-          }
-        } catch (fetchError) {
-          console.error('[PaymentScreen] Error fetching booking:', fetchError);
-        }
-        
-        Alert.alert(
-          'Payment Exists',
-          'A payment for this booking already exists. Please check your bookings.',
-          [{ text: 'View Bookings', onPress: () => navigation.navigate('MainTabs', { screen: 'Bookings' }) }]
-        );
-        return;
+        return await handleExistingPayment(error);
       }
 
       const errorMessage = error.response?.data?.detail || error.message || 'Failed to create payment order';
       Alert.alert('Payment Error', errorMessage);
+      return null;
     } finally {
-      if (isMounted.current) {
+      if (isMountedRef.current) {
         setLoading(false);
       }
     }
   }, [bookingId, paymentType, amount]);
 
-  const checkPaymentStatus = useCallback(async () => {
-    console.log('[PaymentScreen] Checking payment status...');
+  const handleExistingPayment = async (error) => {
+    console.log('[PaymentScreen] Payment already exists, fetching booking...');
+
+    try {
+      const bookings = await bookingsApi.getMyBookings();
+      const booking = bookings.find(b => b.id === bookingId);
+
+      if (!booking) {
+        Alert.alert(
+          'Payment Exists',
+          'A payment for this booking already exists. Please check your bookings.',
+          [{ text: 'View Bookings', onPress: navigateToBookings }]
+        );
+        return null;
+      }
+
+      console.log('[PaymentScreen] Booking status:', booking.status);
+
+      if (booking.status === 'CONFIRMED' || booking.status === 'COMPLETED') {
+        Alert.alert(
+          'Payment Completed',
+          `Your payment has been processed successfully. Booking is ${booking.status}.`,
+          [{ text: 'View Bookings', onPress: navigateToBookings }]
+        );
+        return null;
+      }
+
+      if (booking.status === 'AWAITING_ADVANCE') {
+        const advanceAmount = booking.advance_amount || amount;
+
+        setPaymentData({
+          order_id: `pending_${bookingId}`,
+          amount: advanceAmount,
+          payment_link: null,
+          payment_type: paymentType,
+          existing: true,
+          status: 'AWAITING_ADVANCE',
+        });
+        setStep(STEP.CHECKOUT);
+
+        Alert.alert(
+          'Payment Pending',
+          `Your advance payment of ${formatCurrency(advanceAmount)} is not completed yet.\n\nPlease complete the payment to confirm your booking.`,
+          [{ text: 'Continue to Payment' }]
+        );
+        return paymentData;
+      }
+
+      setPaymentData({
+        order_id: `existing_${bookingId}`,
+        amount: booking.advance_amount || amount,
+        payment_link: null,
+        payment_type: paymentType,
+        existing: true,
+      });
+      setStep(STEP.CHECKOUT);
+
+      Alert.alert(
+        'Continue Payment',
+        `Your booking status: ${booking.status}.\n\nPlease complete your payment to continue.`,
+        [{ text: 'Continue' }]
+      );
+      return paymentData;
+    } catch (fetchError) {
+      console.error('[PaymentScreen] Error fetching booking:', fetchError);
+      Alert.alert(
+        'Payment Exists',
+        'A payment for this booking already exists. Please check your bookings.',
+        [{ text: 'View Bookings', onPress: navigateToBookings }]
+      );
+      return null;
+    }
+  };
+
+  const handleCreateOrder = useCallback(async () => {
+    await createOrder();
+  }, [createOrder]);
+
+  const handleDeepLink = useCallback(async (url) => {
+    if (!url || !url.includes('payment-callback')) {
+      return;
+    }
+
+    console.log('[PaymentScreen] Deep link received:', url);
+
+    if (step !== STEP.VERIFYING && step !== STEP.CHECKOUT && step !== STEP.REVIEW) {
+      console.log('[PaymentScreen] Deep link ignored, already in verifying or later');
+      return;
+    }
+
     try {
       const bookings = await bookingsApi.getMyBookings();
       const currentBooking = bookings.find(b => b.id === bookingId);
-      
+
       if (!currentBooking) {
         Alert.alert('Error', 'Booking not found');
         return;
       }
 
-      const isPaid = paymentType === 'ADVANCE' 
+      const isPaid = paymentType === 'ADVANCE'
         ? (currentBooking.status === 'CONFIRMED' || currentBooking.status === 'COMPLETED')
         : currentBooking.status === 'COMPLETED';
 
-      if (isPaid || currentBooking.status === 'COMPLETED') {
+      if (isPaid) {
         Alert.alert(
-          'Payment Successful ✅',
-          `Your ${paymentType === 'ADVANCE' ? 'advance' : 'remaining'} payment of ${formatCurrency(amount)} has been processed!`,
-          [
-            {
-              text: 'OK',
-              onPress: () => navigation.navigate('MainTabs', { screen: 'Bookings' }),
-            },
-          ]
+          'Payment Successful',
+          `Your ${paymentType === 'ADVANCE' ? 'advance' : 'remaining'} payment has been processed!`,
+          [{ text: 'OK', onPress: navigateToBookings }]
         );
       } else if (currentBooking.status === 'AWAITING_ADVANCE' || currentBooking.status === 'AWAITING_FINAL_PAYMENT') {
+        setStep(STEP.VERIFYING);
+        startPolling();
+
         Alert.alert(
           'Payment Pending',
-          'Your payment is being processed. Please wait a moment and check your bookings.',
+          'Your payment is being processed. Starting automatic status check...',
           [
-            { text: 'Check Now', onPress: () => navigation.navigate('MainTabs', { screen: 'Bookings' }) },
-            { text: 'Wait', style: 'cancel' },
+            { text: 'Check Now', onPress: navigateToBookings },
+            { text: 'Stay Here', style: 'cancel' },
           ]
-        );
-      } else {
-        Alert.alert(
-          'Payment Incomplete',
-          'Please complete your payment to confirm the booking.',
-          [{ text: 'OK' }]
         );
       }
     } catch (error) {
-      console.error('[PaymentScreen] Error checking payment status:', error);
-      Alert.alert('Error', 'Unable to verify payment status. Please check your bookings.');
+      console.error('[PaymentScreen] Deep link error:', error);
+      Alert.alert('Error', 'Unable to verify payment status.');
     }
-  }, [bookingId, paymentType, amount, navigation]);
+  }, [bookingId, paymentType, navigateToBookings, step, startPolling]);
 
   useEffect(() => {
     const subscription = Linking.addEventListener('url', (event) => {
-      console.log('[PaymentScreen] Deep link:', event.url);
-      if (event.url.includes('payment-callback')) {
-        checkPaymentStatus();
-      }
+      handleDeepLink(event.url);
     });
 
     return () => {
       subscription.remove();
     };
-  }, [checkPaymentStatus]);
+  }, [handleDeepLink]);
 
-  const handlePaymentSuccess = useCallback(async () => {
-    if (!paymentData) {
-      console.log('[PaymentScreen] No payment data, simulating success...');
-      return simulatePayment();
-    }
-
-    console.log('[PaymentScreen] Processing payment verification...');
-    setLoading(true);
-    setStep('verifying');
+  const verifyPaymentAndStartPolling = useCallback(async (razorpayOrderId, razorpayPaymentId, razorpaySignature) => {
+    console.log('[PaymentScreen] Verifying payment:', { razorpayOrderId, razorpayPaymentId });
 
     try {
-      const razorpayPaymentId = 'pay_' + Date.now();
-      const razorpayOrderId = paymentData.order_id;
-      const razorpaySignature = 'simulated_signature_' + Date.now();
-
-      console.log('[PaymentScreen] Verifying payment:', {
-        razorpayOrderId,
-        razorpayPaymentId,
-      });
-
+      console.log('[PaymentScreen] 📡 Calling verifyPayment API...');
       await verifyPayment(razorpayOrderId, razorpayPaymentId, razorpaySignature);
-      console.log('[PaymentScreen] Payment verified - backend may reject due to invalid signature');
+      console.log('[PaymentScreen] ✅ Payment verified on backend');
 
-      Alert.alert(
-        'Payment Successful ✅',
-        'Verifying payment status...',
-        [{ text: 'OK' }]
-      );
-      
-      const pollStartTime = Date.now();
-      const pollInterval = setInterval(async () => {
-        console.log('[PaymentScreen] Polling for status update...');
-        try {
-          const bookings = await bookingsApi.getMyBookings();
-          const updatedBooking = bookings.find(b => b.id === bookingId);
-          
-          if (!updatedBooking) {
-            console.log('[PaymentScreen] Booking not found in response');
-            return;
-          }
+      setStep(STEP.VERIFYING);
 
-          const status = updatedBooking.status;
-          console.log('[PaymentScreen] Poll check: status =', status);
+      startPolling();
 
-          if (status === 'CONFIRMED' || status === 'COMPLETED') {
-            clearInterval(pollInterval);
-            console.log('[PaymentScreen] Payment verified: status =', status);
-            Alert.alert(
-              'Payment Verified ✅',
-              `Your ${paymentType === 'ADVANCE' ? 'advance' : 'remaining'} payment has been confirmed! Booking is now ${status}.`,
-              [
-                {
-                  text: 'View Bookings',
-                  onPress: () => {
-                    setLoading(false);
-                    setStep('review');
-                    navigation.navigate('MainTabs', { screen: 'Bookings' });
-                  },
-                },
-              ]
-            );
-            return;
-          }
-
-          if (status === 'CANCELLED' || status === 'REJECTED') {
-            clearInterval(pollInterval);
-            console.log('[PaymentScreen] Payment failed: status =', status);
-            Alert.alert(
-              'Payment Failed',
-              `Your payment could not be processed. Status: ${status}`,
-              [{ text: 'OK', onPress: () => {
-                setLoading(false);
-                setStep('review');
-                navigation.navigate('MainTabs', { screen: 'Bookings' });
-              }}]
-            );
-            return;
-          }
-
-          const elapsedSeconds = Math.floor((Date.now() - pollStartTime) / 1000);
-          if (elapsedSeconds > 120) {
-            clearInterval(pollInterval);
-            console.log('[PaymentScreen] Polling timeout after 120s, navigating to bookings');
-            Alert.alert(
-              'Verification Pending',
-              'Your payment is being processed. Please check your bookings for status updates.',
-              [{ text: 'View Bookings', onPress: () => {
-                setLoading(false);
-                setStep('review');
-                navigation.navigate('MainTabs', { screen: 'Bookings' });
-              }}]
-            );
-          }
-        } catch (pollError) {
-          console.error('[PaymentScreen] Polling error:', pollError);
-        }
-      }, 3000);
+      return true;
     } catch (error) {
-      console.error('[PaymentScreen] Verification failed:', error);
-      
+      console.error('[PaymentScreen] ❌ Verification failed:', JSON.stringify(error?.response || error));
+
       const errorMessage = error.response?.data?.detail || 'Payment verification failed';
       Alert.alert('Payment Error', errorMessage);
-    } finally {
-      if (isMounted.current) {
-        setLoading(false);
-        setStep('review');
-      }
-    }
-  }, [paymentData, paymentType, navigation, bookingId]);
 
-  const simulatePayment = useCallback(async () => {
-    console.log('[PaymentScreen] Simulating payment flow...');
-    setLoading(true);
-    setStep('verifying');
+      return false;
+    }
+  }, [startPolling]);
+
+  const handlePaymentSuccess = useCallback(async (response) => {
+    if (!paymentData) {
+      console.log('[PaymentScreen] No payment data, simulating success...');
+      return handleSimulation();
+    }
+
+    console.log('[PaymentScreen] PAYMENT SUCCESS RESPONSE:', response);
+    setStep(STEP.VERIFYING);
+
+    const razorpayPaymentId = response.razorpay_payment_id;
+    const razorpayOrderId = response.razorpay_order_id || paymentData.order_id;
+    const razorpaySignature = response.razorpay_signature;
+
+    console.log('📡 Calling verifyPayment API...', {
+      order_id: razorpayOrderId,
+      payment_id: razorpayPaymentId,
+      signature: razorpaySignature
+    });
+
+    try {
+      await verifyPaymentAndStartPolling(razorpayOrderId, razorpayPaymentId, razorpaySignature);
+      console.log('✅ verifyPayment API SUCCESS');
+    } catch (error) {
+      console.log('❌ verifyPayment FAILED:', JSON.stringify(error?.response || error));
+      throw error;
+    }
+  }, [paymentData, verifyPaymentAndStartPolling]);
+
+  const handleSimulation = useCallback(async () => {
+    console.log('[PaymentScreen] Running payment simulation...');
+    setStep(STEP.VERIFYING);
 
     try {
       let orderId = paymentData?.order_id;
-      
+
       if (!orderId || orderId.startsWith('pending_') || orderId.startsWith('sim_')) {
-        console.log('[PaymentScreen] No valid order_id, Creating real order first...');
+        console.log('[PaymentScreen] Creating real order for simulation...');
         const response = await createPaymentOrder(bookingId, paymentType);
         orderId = response.order_id;
+
+        if (!isMountedRef.current) return;
+
         setPaymentData(response);
       }
 
@@ -362,226 +413,110 @@ const PaymentScreen = ({ navigation, route }) => {
 
       console.log('[PaymentScreen] Simulating verification for order:', orderId);
 
-      await verifyPayment(orderId, razorpayPaymentId, razorpaySignature);
-
-      console.log('[PaymentScreen] Simulated payment verified');
-
-      Alert.alert(
-        'Payment Successful ✅',
-        'Verifying payment status...',
-        [{ text: 'OK' }]
-      );
-      
-      const pollStartTime = Date.now();
-      const pollInterval = setInterval(async () => {
-        console.log('[PaymentScreen] Polling for status update...');
-        try {
-          const bookings = await bookingsApi.getMyBookings();
-          const updatedBooking = bookings.find(b => b.id === bookingId);
-          
-          if (!updatedBooking) {
-            console.log('[PaymentScreen] Booking not found in response');
-            return;
-          }
-
-          const status = updatedBooking.status;
-          console.log('[PaymentScreen] Poll check: status =', status);
-
-          if (status === 'CONFIRMED' || status === 'COMPLETED') {
-            clearInterval(pollInterval);
-            console.log('[PaymentScreen] Payment verified: status =', status);
-            Alert.alert(
-              'Payment Verified ✅',
-              `Your ${paymentType === 'ADVANCE' ? 'advance' : 'remaining'} payment has been confirmed! Booking is now ${status}.`,
-              [
-                {
-                  text: 'View Bookings',
-                  onPress: () => {
-                    setLoading(false);
-                    setStep('review');
-                    navigation.navigate('MainTabs', { screen: 'Bookings' });
-                  },
-                },
-              ]
-            );
-            return;
-          }
-
-          if (status === 'CANCELLED' || status === 'REJECTED') {
-            clearInterval(pollInterval);
-            console.log('[PaymentScreen] Payment failed: status =', status);
-            Alert.alert(
-              'Payment Failed',
-              `Your payment could not be processed. Status: ${status}`,
-              [{ text: 'OK', onPress: () => {
-                setLoading(false);
-                setStep('review');
-                navigation.navigate('MainTabs', { screen: 'Bookings' });
-              }}]
-            );
-            return;
-          }
-
-          const elapsedSeconds = Math.floor((Date.now() - pollStartTime) / 1000);
-          if (elapsedSeconds > 120) {
-            clearInterval(pollInterval);
-            console.log('[PaymentScreen] Polling timeout after 120s, navigating to bookings');
-            Alert.alert(
-              'Verification Pending',
-              'Your payment is being processed. Please check your bookings for status updates.',
-              [{ text: 'View Bookings', onPress: () => {
-                setLoading(false);
-                setStep('review');
-                navigation.navigate('MainTabs', { screen: 'Bookings' });
-              }}]
-            );
-          }
-        } catch (pollError) {
-          console.error('[PaymentScreen] Polling error:', pollError);
-        }
-      }, 3000);
+      await verifyPaymentAndStartPolling(orderId, razorpayPaymentId, razorpaySignature);
     } catch (error) {
       console.error('[PaymentScreen] Simulation failed:', error);
+
+      if (!isMountedRef.current) return;
+
       Alert.alert('Error', 'Payment simulation failed: ' + (error.message || 'Unknown error'));
+      setStep(STEP.REVIEW);
+    }
+  }, [paymentData, bookingId, paymentType, verifyPaymentAndStartPolling]);
+
+  const handlePaymentLink = useCallback(async () => {
+    if (!paymentData?.payment_link) {
+      return;
+    }
+
+    console.log('[PaymentScreen] Opening payment link...');
+    setLoading(true);
+
+    try {
+      const canOpen = await Linking.canOpenURL(paymentData.payment_link);
+      if (canOpen) {
+        await Linking.openURL(paymentData.payment_link);
+
+        Alert.alert(
+          'Payment Initiated',
+          'Complete the payment in the browser, then return to the app to check status.',
+          [
+            { text: 'Check Status', onPress: handleDeepLink },
+            { text: 'Later', style: 'cancel' }
+          ]
+        );
+      } else {
+        Alert.alert('Error', 'Unable to open payment link');
+      }
+    } catch (error) {
+      console.error('[PaymentScreen] Error opening link:', error);
+      Alert.alert('Error', 'Failed to open payment page');
     } finally {
-      if (isMounted.current) {
+      if (isMountedRef.current) {
         setLoading(false);
-        setStep('review');
       }
     }
-  }, [paymentType, navigation, paymentData, bookingId]);
+  }, [paymentData, handleDeepLink]);
+
+  const handleRazorpayPayment = useCallback(async () => {
+    console.log('[PaymentScreen] Opening Razorpay SDK...');
+    setLoading(true);
+
+    const razorpayKey = paymentData?.key_id || RAZORPAY_KEY_ID;
+    if (!razorpayKey) {
+      Alert.alert('Error', 'Payment configuration missing');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const options = {
+        description: `Payment for ${listingTitle || 'Event Booking'}`,
+        image: 'https://i.imgur.com/u2cT5t3.png',
+        currency: 'INR',
+        key: razorpayKey,
+        order_id: paymentData.order_id,
+        amount: ((paymentData?.amount || amount) * 100).toString(),
+        name: 'Event Platform',
+        prefill: {
+          contact: '',
+          email: '',
+        },
+        theme: {
+          color: colors.primary,
+        },
+      };
+
+      // react-native-razorpay returns payment data via Promise, NOT via handler callback
+      const data = await RazorpayCheckout.open(options);
+      console.log('🔥 HANDLER CALLED');
+      console.log('🔥 PAYMENT RESPONSE:', JSON.stringify(data));
+      console.log('📡 CALLING VERIFY API');
+      await handlePaymentSuccess(data);
+      console.log('✅ verifyPayment API SUCCESS');
+    } catch (error) {
+      console.log('❌ RAZORPAY ERROR:', JSON.stringify(error));
+      if (error.error?.code !== 'USER_CANCELLED') {
+        Alert.alert('Payment Error', error.error?.description || 'Payment failed');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [paymentData, amount, listingTitle, handlePaymentSuccess]);
 
   const handlePayNow = useCallback(async () => {
-    if (paymentData?.payment_link) {
-      console.log('[PaymentScreen] Opening payment link...');
-      setLoading(true);
-      
-      try {
-        const canOpen = await Linking.canOpenURL(paymentData.payment_link);
-        if (canOpen) {
-          await Linking.openURL(paymentData.payment_link);
-          
-          Alert.alert(
-            'Payment Initiated',
-            'Complete the payment in the browser, then return to the app to check status.',
-            [
-              { text: 'Check Status', onPress: () => checkPaymentStatus() },
-              { text: 'Later', style: 'cancel' }
-            ]
-          );
-        } else {
-          Alert.alert('Error', 'Unable to open payment link');
-        }
-      } catch (error) {
-        console.error('[PaymentScreen] Error opening link:', error);
-        Alert.alert('Error', 'Failed to open payment page');
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
-
-    if (paymentData?.existing) {
-      console.log('[PaymentScreen] Existing payment without link - using demo mode');
-      
-      Alert.alert(
-        'Payment Available',
-        'Your payment session is ready. Click Pay Now to complete the payment.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
-    if (RazorpayCheckout && RAZORPAY_KEY_ID && !RAZORPAY_KEY_ID.includes('YOUR_')) {
-      console.log('[PaymentScreen] Opening Razorpay...');
-      setLoading(true);
-      
-      try {
-        const options = {
-          description: `Payment for ${listingTitle || 'Event Booking'}`,
-          image: 'https://i.imgur.com/u2cT5t3.png',
-          currency: 'INR',
-          key: RAZORPAY_KEY_ID,
-          order_id: paymentData.order_id,
-          amount: ((paymentData?.amount || amount) * 100).toString(),
-          name: 'Event Platform',
-          prefill: {
-            contact: '',
-            email: '',
-          },
-          handler: async function (response) {
-            console.log('[PaymentScreen] Razorpay handler triggered:', response);
-            try {
-              await verifyPayment(
-                paymentData.order_id,
-                response.razorpay_payment_id,
-                response.razorpay_signature
-              );
-              
-              Alert.alert(
-                'Payment Successful ✅',
-                'Verifying payment status...',
-                [{ text: 'OK' }]
-              );
-              
-              let pollCount = 0;
-              const maxPolls = 12;
-              const pollInterval = setInterval(async () => {
-                pollCount++;
-                console.log('[PaymentScreen] Polling for status update:', pollCount);
-                try {
-                  const bookings = await bookingsApi.getMyBookings();
-                  const updatedBooking = bookings.find(b => b.id === bookingId);
-                  if (updatedBooking && (updatedBooking.status === 'CONFIRMED' || updatedBooking.status === 'COMPLETED')) {
-                    clearInterval(pollInterval);
-                    Alert.alert(
-                      'Payment Verified ✅',
-                      `Your ${paymentType === 'ADVANCE' ? 'advance' : 'remaining'} payment has been confirmed! Booking is now ${updatedBooking.status}.`,
-                      [
-                        {
-                          text: 'View Bookings',
-                          onPress: () => navigation.navigate('MainTabs', { screen: 'Bookings' }),
-                        },
-                      ]
-                    );
-                    return;
-                  }
-                  if (pollCount >= maxPolls) {
-                    clearInterval(pollInterval);
-                    console.log('[PaymentScreen] Max polls reached, status may still be updating');
-                  }
-                } catch (pollError) {
-                  console.error('[PaymentScreen] Polling error:', pollError);
-                }
-              }, 3000);
-            } catch (verifyError) {
-              console.error('[PaymentScreen] Verification failed:', verifyError);
-              Alert.alert('Warning', 'Payment succeeded but verification pending. Contact support if amount deducted.');
-            }
-          },
-          theme: {
-            color: colors.primary,
-          },
-        };
-
-        const result = await RazorpayCheckout.open(options);
-      } catch (error) {
-        console.log('[PaymentScreen] Razorpay error:', error);
-        if (error.error?.code !== 'USER_CANCELLED') {
-          Alert.alert('Payment Error', error.error?.description || 'Payment failed');
-        }
-      } finally {
-        setLoading(false);
-      }
+    if (!isSimulation) {
+      await handleRazorpayPayment();
     } else {
-      console.log('[PaymentScreen] Using payment simulation...');
-      simulatePayment();
+      await handleSimulation();
     }
-  }, [paymentData, amount, listingTitle, paymentType, navigation, simulatePayment]);
+  }, [handleRazorpayPayment, handleSimulation]);
 
   const handleRetry = useCallback(() => {
     console.log('[PaymentScreen] Retrying payment...');
-    setStep('review');
+    setStep(STEP.REVIEW);
     setPaymentData(null);
   }, []);
 
@@ -617,7 +552,7 @@ const PaymentScreen = ({ navigation, route }) => {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.content}>
-        {step === 'review' && (
+        {step === STEP.REVIEW && (
           <>
             <View style={styles.header}>
               <Text style={styles.title}>Payment</Text>
@@ -629,7 +564,7 @@ const PaymentScreen = ({ navigation, route }) => {
                 <Text style={styles.summaryLabel}>Listing</Text>
                 <Text style={styles.summaryValue}>{listingTitle || 'Event Booking'}</Text>
               </View>
-              
+
               {eventDate && (
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Event Date</Text>
@@ -670,13 +605,15 @@ const PaymentScreen = ({ navigation, route }) => {
           </>
         )}
 
-        {step === 'verifying' && (
+        {step === STEP.VERIFYING && (
           <View style={styles.verifyingContainer}>
             <View style={styles.verifyingContent}>
               <Text style={styles.verifyingIcon}>🔄</Text>
               <Text style={styles.verifyingTitle}>Verifying your payment...</Text>
               <Text style={styles.verifyingText}>
-                Please wait while we confirm your payment with the server.
+                {isVerifying
+                  ? 'Please wait while we confirm your payment with the server.'
+                  : 'Waiting for booking status update...'}
               </Text>
               <Text style={styles.verifyingSubtext}>
                 This may take a few seconds.
@@ -685,7 +622,7 @@ const PaymentScreen = ({ navigation, route }) => {
           </View>
         )}
 
-        {step === 'checkout' && paymentData && (
+        {step === STEP.CHECKOUT && paymentData && (
           <>
             <View style={styles.header}>
               <Text style={styles.title}>Complete Payment</Text>
@@ -713,14 +650,14 @@ const PaymentScreen = ({ navigation, route }) => {
                   {paymentData.order_id || 'N/A'}
                 </Text>
               </View>
-              
+
               <View style={styles.checkoutRow}>
                 <Text style={styles.checkoutLabel}>Payment Type</Text>
                 <Text style={styles.checkoutValue}>
                   {paymentType === 'ADVANCE' ? 'Advance' : 'Final'}
                 </Text>
               </View>
-              
+
               <View style={styles.checkoutRow}>
                 <Text style={styles.checkoutLabel}>Amount</Text>
                 <Text style={styles.checkoutAmount}>
@@ -728,15 +665,6 @@ const PaymentScreen = ({ navigation, route }) => {
                 </Text>
               </View>
             </Card>
-
-            {paymentData.payment_link && (
-              <View style={styles.paymentLinkContainer}>
-                <Text style={styles.paymentLinkLabel}>Payment Link</Text>
-                <Text style={styles.paymentLinkText}>
-                  Click "Pay Now" to complete your payment securely
-                </Text>
-              </View>
-            )}
 
             <View style={styles.buttonContainer}>
               <Button
@@ -747,7 +675,7 @@ const PaymentScreen = ({ navigation, route }) => {
                 style={styles.payButton}
                 size="large"
               />
-              
+
               <Button
                 title="Cancel"
                 onPress={handleRetry}
@@ -757,9 +685,11 @@ const PaymentScreen = ({ navigation, route }) => {
               />
             </View>
 
-            <Text style={styles.simulatedNote}>
-              📌 Demo Mode: Payment simulation enabled
-            </Text>
+            {isSimulation && (
+              <Text style={styles.simulatedNote}>
+                📌 Demo Mode: Payment simulation enabled
+              </Text>
+            )}
           </>
         )}
       </View>

@@ -35,7 +35,7 @@ const BookingCard = ({ booking, onPress, variant = 'user' }) => {
           <Text style={styles.title} numberOfLines={1}>
             {title}
           </Text>
-          <StatusBadge status={booking.status} size="small" />
+          <StatusBadge status={booking.status} size="small" advancePaid={booking.advance_paid} />
         </View>
         
         <View style={styles.details}>

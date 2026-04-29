@@ -98,6 +98,11 @@ services:
 
   nginx:
     image: nginx:alpine
+    command: >
+      /bin/sh -c " until curl -s http://api:8000/health; do
+        echo 'Waiting for API...';
+        sleep 2;
+      done; nginx -g 'daemon off;' "
     restart: always
     ports:
       - "8000:8000"

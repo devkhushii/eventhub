@@ -21,6 +21,15 @@ class PaymentRepository:
         )
 
     @staticmethod
+    def get_by_payment_id(db, payment_id):
+        return (
+            db.query(Payment)
+            .options(joinedload(Payment.booking).joinedload(Booking.listing))
+            .filter(Payment.razorpay_payment_id == payment_id)
+            .first()
+        )
+
+    @staticmethod
     def get_by_id(db, payment_id):
         return db.query(Payment).filter(Payment.id == payment_id).first()
 

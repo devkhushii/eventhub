@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import HTTPException  # type: ignore
 
 from app.modules.bookings.repository import BookingRepository
-from app.modules.bookings.models import BookingStatus
+from app.modules.bookings.models import BookingStatus, AdvancePaymentStatus
 from .repository import PaymentRepository, PayoutRepository
 from .models import (
     Payment,
@@ -17,8 +17,9 @@ from .models import (
     Payout,
     PayoutStatus,
 )
-from .utils import create_order, create_payment_link, verify_signature, refund_payment
+from .utils import create_order, verify_signature, refund_payment
 from .constant import ADVANCE_PERCENTAGE, ADVANCE_TO_VENDOR_PERCENT, PLATFORM_COMMISSION
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -182,12 +183,8 @@ class PaymentService:
         )
 
         # Step 6: Create Razorpay order (amount in paise = amount * 100)
-        user = booking.user
-        customer = {"name": user.full_name, "email": user.email, "contact": user.phone}
-
         try:
             order = create_order(expected_amount)
-            payment_link = create_payment_link(expected_amount, customer)
             logger.info(f"[PAYMENT] Razorpay order created: {order['id']}")
         except Exception as e:
             logger.error(f"[PAYMENT] Razorpay API error: {e}")
@@ -204,9 +201,6 @@ class PaymentService:
                 currency=CURRENCY,  # Always enforce INR
                 payment_type=PaymentType(payment_type),
                 razorpay_order_id=order["id"],
-                payment_link_id=payment_link["id"],
-                payment_link_url=payment_link["short_url"],
-                qr_code_url=payment_link.get("qr_code_url"),
                 escrow_status=EscrowStatus.PENDING,
             )
 
@@ -225,12 +219,12 @@ class PaymentService:
                 status_code=500, detail="Failed to create payment. Please try again."
             )
 
-        # Step 8: Schedule background verification task
+        # Step 8: Schedule background verification task for fallback
         try:
             from app.modules.tasks import verify_payment_status_task
 
-            # Start verification after 5 seconds (user needs time to complete payment)
-            verify_payment_status_task.apply_async((str(payment.id),), countdown=5)
+            # Start verification after 5 minutes (user needs time to complete payment via SDK)
+            verify_payment_status_task.apply_async((str(payment.id),), countdown=300)
         except Exception as e:
             logger.warning(f"[PAYMENT] Failed to schedule verification task: {e}")
 
@@ -239,102 +233,177 @@ class PaymentService:
             "amount": payment.amount,
             "currency": payment.currency,
             "order_id": order["id"],
-            "payment_link": payment.payment_link_url,
-            "qr_code": payment.qr_code_url,
+            "key_id": settings.RAZORPAY_KEY_ID,
             "payment_type": payment_type,
             "expected_amount": expected_amount,
         }
 
     @staticmethod
     def verify_payment(db: Session, data):
+        """
+        Verify payment and update booking status.
+
+        Key features:
+        - Idempotency: Returns existing payment if already verified
+        - Transaction safety: Rolls back on failure
+        - Signature verification (with simulation mode bypass)
+        - Proper status transitions for ADVANCE/FINAL payments
+        """
         logger.info(
-            f"Verifying payment: razorpay_order_id={data.razorpay_order_id}, razorpay_payment_id={data.razorpay_payment_id}"
+            f"[VERIFY] Starting payment verification: "
+            f"razorpay_order_id={data.razorpay_order_id}, "
+            f"razorpay_payment_id={data.razorpay_payment_id}"
         )
 
+        # Step 1: Find payment by razorpay order ID
         payment = PaymentRepository.get_by_order_id(db, data.razorpay_order_id)
 
         if not payment:
-            logger.error(f"Payment not found for order: {data.razorpay_order_id}")
+            logger.error(
+                f"[VERIFY] Payment not found for order: {data.razorpay_order_id}"
+            )
             raise HTTPException(status_code=404, detail="Payment not found")
 
-        if payment.status == PaymentStatus.SUCCESS:
-            logger.info(f"Payment already verified: payment_id={payment.id}")
-            return payment
+        logger.info(
+            f"[VERIFY] Found payment: payment_id={payment.id}, "
+            f"current_status={payment.status}, "
+            f"booking_id={payment.booking_id}"
+        )
 
-        if (
-            payment.razorpay_payment_id
-            and payment.razorpay_payment_id != data.razorpay_payment_id
-        ):
+        # Step 2: Idempotency - check if already verified with same payment ID
+        if payment.status == PaymentStatus.SUCCESS:
+            if payment.razorpay_payment_id == data.razorpay_payment_id:
+                logger.info(
+                    f"[VERIFY] Payment already verified (idempotent): payment_id={payment.id}"
+                )
+                return payment
+            else:
+                # Different payment ID - potential duplicate attempt
+                logger.warning(
+                    f"[VERIFY] Payment already SUCCESS with different razorpay_payment_id: "
+                    f"existing={payment.razorpay_payment_id}, new={data.razorpay_payment_id}"
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail="This payment has already been processed with a different payment ID",
+                )
+
+        # Step 3: Check if this exact payment ID was already used (unique constraint)
+        existing_with_same_id = PaymentRepository.get_by_payment_id(
+            db, data.razorpay_payment_id
+        )
+        if existing_with_same_id and existing_with_same_id.id != payment.id:
             logger.warning(
-                f"Duplicate payment attempt: existing={payment.razorpay_payment_id}, new={data.razorpay_payment_id}"
+                f"[VERIFY] Payment ID already used on different payment: "
+                f"razorpay_payment_id={data.razorpay_payment_id}, "
+                f"existing_payment_id={existing_with_same_id.id}"
             )
             raise HTTPException(
                 status_code=409, detail="This payment has already been processed"
             )
 
+        # Step 4: Verify Razorpay signature
         if not verify_signature(
             data.razorpay_order_id, data.razorpay_payment_id, data.razorpay_signature
         ):
             logger.error(
-                f"Invalid payment signature for order: {data.razorpay_order_id}"
+                f"[VERIFY] Invalid signature for order: {data.razorpay_order_id}"
             )
             payment.status = PaymentStatus.FAILED
-            db.commit()
+            try:
+                db.commit()
+                logger.info(
+                    f"[VERIFY] Payment marked as FAILED due to invalid signature"
+                )
+            except Exception as e:
+                db.rollback()
+                logger.error(f"[VERIFY] Failed to commit FAILED status: {e}")
             raise HTTPException(status_code=400, detail="Invalid payment signature")
 
-        payment.status = PaymentStatus.SUCCESS
-        payment.razorpay_payment_id = data.razorpay_payment_id
+        logger.info(f"[VERIFY] Signature verified successfully")
 
-        booking = payment.booking
+        # Step 5: Update payment with transaction safety
+        try:
+            payment.status = PaymentStatus.SUCCESS
+            payment.razorpay_payment_id = data.razorpay_payment_id
 
-        if payment.payment_type == PaymentType.ADVANCE:
+            booking = payment.booking
             logger.info(
-                f"Processing ADVANCE payment: payment_id={payment.id}, booking_id={booking.id}"
+                f"[VERIFY] Processing booking: booking_id={booking.id}, "
+                f"current_status={booking.status}, payment_type={payment.payment_type.value}"
             )
 
-            payment.escrow_status = EscrowStatus.HELD
-            booking.status = BookingStatus.CONFIRMED
+            # Step 6: Update booking status based on payment type
+            if payment.payment_type == PaymentType.ADVANCE:
+                logger.info(f"[VERIFY] Processing ADVANCE payment")
 
-            vendor_share = int(payment.amount * ADVANCE_TO_VENDOR_PERCENT)
-            escrow_share = payment.amount - vendor_share
+                payment.escrow_status = EscrowStatus.HELD
 
-            payment.vendor_released_amount = vendor_share
-            payment.escrow_amount = escrow_share
+                vendor_share = int(payment.amount * ADVANCE_TO_VENDOR_PERCENT)
+                escrow_share = payment.amount - vendor_share
 
-            payout = Payout(
-                payment_id=payment.id,
-                booking_id=booking.id,
-                vendor_id=booking.listing.vendor_id,
-                amount=vendor_share,
-                currency=payment.currency,
-                status=PayoutStatus.COMPLETED,
-            )
-            PayoutRepository.create(db, payout)
+                payment.vendor_released_amount = vendor_share
+                payment.escrow_amount = escrow_share
+                payment.escrow_status = EscrowStatus.PARTIALLY_RELEASED
 
-            payment.escrow_status = EscrowStatus.PARTIALLY_RELEASED
+                # Update booking: CONFIRMED → AWAITING_FINAL_PAYMENT (atomic)
+                old_status = booking.status
+                booking.status = BookingStatus.AWAITING_FINAL_PAYMENT
+                booking.advance_paid = True
+                booking.advance_payment_status = AdvancePaymentStatus.PAID
+
+                logger.info(
+                    f"[VERIFY] Advance payment processed: "
+                    f"vendor_share={vendor_share}, escrow_share={escrow_share}, "
+                    f"booking_status: {old_status} -> {booking.status}, "
+                    f"advance_paid=True"
+                )
+
+                # Create payout for vendor
+                payout = Payout(
+                    payment_id=payment.id,
+                    booking_id=booking.id,
+                    vendor_id=booking.listing.vendor_id,
+                    amount=vendor_share,
+                    currency=payment.currency,
+                    status=PayoutStatus.COMPLETED,
+                )
+                PayoutRepository.create(db, payout)
+                logger.info(f"[VERIFY] Vendor payout created: amount={vendor_share}")
+
+            elif payment.payment_type == PaymentType.FINAL:
+                logger.info(f"[VERIFY] Processing FINAL payment")
+
+                payment.escrow_status = EscrowStatus.HELD
+                payment.escrow_amount = payment.amount
+
+                old_status = booking.status
+                booking.status = BookingStatus.COMPLETED
+
+                logger.info(
+                    f"[VERIFY] Final payment processed: "
+                    f"escrow_amount={payment.amount}, "
+                    f"booking_status: {old_status} -> {booking.status}"
+                )
+
+            # Step 7: Commit all changes atomically
+            db.commit()
+            db.refresh(payment)
 
             logger.info(
-                f"Advance payment processed: vendor_payout={vendor_share}, escrow_held={escrow_share}"
+                f"[VERIFY] Payment verified successfully: "
+                f"payment_id={payment.id}, status={payment.status}, "
+                f"booking_status={booking.status}"
             )
 
-        elif payment.payment_type == PaymentType.FINAL:
-            logger.info(
-                f"Processing FINAL payment: payment_id={payment.id}, booking_id={booking.id}"
+        except Exception as e:
+            db.rollback()
+            logger.exception(f"[VERIFY] Failed to verify payment: {e}")
+            raise HTTPException(
+                status_code=500, detail="Payment verification failed. Please try again."
             )
 
-            payment.escrow_status = EscrowStatus.HELD
-            payment.escrow_amount = payment.amount
-
-            booking.status = BookingStatus.COMPLETED
-
-            logger.info(f"Final payment processed, booking status: {booking.status}")
-
-        db.commit()
-        logger.info(
-            f"Payment verified successfully: payment_id={payment.id}, status={payment.status}"
-        )
-
-        # Create notification for user
+        # Step 8: Create notification for user
         try:
             from app.modules.notifications.models import NotificationType
             from app.modules.notifications.repository import NotificationRepository
@@ -350,9 +419,11 @@ class PaymentService:
                 "message": f"Your {payment_type_label.lower()} payment of ₹{payment.amount / 100:.2f} has been processed successfully.",
             }
             NotificationRepository(db).create_notification(notification_data)
-            logger.info(f"Payment notification created for user {booking.user_id}")
+            logger.info(
+                f"[VERIFY] Payment notification created for user {booking.user_id}"
+            )
         except Exception as e:
-            logger.error(f"Failed to create payment notification: {e}")
+            logger.error(f"[VERIFY] Failed to create payment notification: {e}")
 
         return payment
 

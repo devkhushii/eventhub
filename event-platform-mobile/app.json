@@ -40,8 +40,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "event-platform-mobile"
+        "projectId": "f5384e24-9dda-46b3-8801-16c35186d7d6"
       }
-    }
+    },
+    "owner": "devkhushii"
   }
 }

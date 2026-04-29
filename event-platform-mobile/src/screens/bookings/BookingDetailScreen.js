@@ -22,7 +22,7 @@ const STATUS_LABELS = {
   PENDING: 'Pending',
   APPROVED: 'Approved - Pay Now',
   AWAITING_ADVANCE: 'Awaiting Advance Payment',
-  CONFIRMED: 'Confirmed',
+  CONFIRMED: 'Confirmed - Pay Remaining',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
   REJECTED: 'Rejected',
@@ -57,7 +57,7 @@ const BookingDetailScreen = ({ navigation, route }) => {
       }
       
       const found = allBookings.find(b => b.id === bookingId);
-      console.log('[BookingDetail] Found booking:', found);
+      console.log('[BookingDetail] Found booking:', found?.id, 'status:', found?.status, 'advance_paid:', found?.advance_paid);
       setBooking(found || null);
     } catch (error) {
       console.error('[BookingDetail] Failed to fetch booking:', error);
@@ -205,7 +205,7 @@ const BookingDetailScreen = ({ navigation, route }) => {
     let paymentType = 'ADVANCE';
     let amount = booking.advance_amount;
     
-    if (booking.status === 'AWAITING_FINAL_PAYMENT') {
+    if (booking.status === 'AWAITING_FINAL_PAYMENT' || booking.status === 'CONFIRMED') {
       paymentType = 'FINAL';
       amount = booking.total_price - (booking.advance_amount || 0);
     } else if (booking.status === 'AWAITING_ADVANCE' && !booking.advance_amount) {
@@ -231,7 +231,11 @@ const BookingDetailScreen = ({ navigation, route }) => {
       case 'PENDING':
         return colors.warning;
       case 'AWAITING_PAYMENT':
+      case 'AWAITING_ADVANCE':
         return colors.info;
+      case 'AWAITING_FINAL_PAYMENT':
+        // Show success color when advance is paid (booking is confirmed)
+        return booking.advance_paid ? colors.success : colors.info;
       case 'CONFIRMED':
         return colors.success;
       case 'COMPLETED':
@@ -247,6 +251,10 @@ const BookingDetailScreen = ({ navigation, route }) => {
   const getStatusLabel = () => {
     if (!booking) return 'Unknown';
     const status = booking.status?.toUpperCase();
+    // When advance is paid and awaiting final, show confirmed context
+    if (status === 'AWAITING_FINAL_PAYMENT' && booking.advance_paid) {
+      return 'Booking Confirmed 🎉 - Pay Remaining';
+    }
     return STATUS_LABELS[status] || booking.status || 'Unknown';
   };
 
@@ -266,6 +274,7 @@ const BookingDetailScreen = ({ navigation, route }) => {
     booking.status === 'APPROVED' ||
     booking.status === 'AWAITING_PAYMENT' ||
     booking.status === 'AWAITING_ADVANCE' ||
+    booking.status === 'CONFIRMED' ||
     booking.status === 'AWAITING_FINAL_PAYMENT'
   ) && !isVendor && !isAdmin;
   const showCancelButton = booking && booking.status === 'PENDING' && !isVendor && !isAdmin;
@@ -305,7 +314,11 @@ const BookingDetailScreen = ({ navigation, route }) => {
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Advance Amount</Text>
-            <Text style={styles.detailValue}>{formatCurrency(booking.advance_amount) || 'Not paid yet'}</Text>
+            <Text style={styles.detailValue}>
+              {booking.advance_paid
+                ? `${formatCurrency(booking.advance_amount)} ✅ Paid`
+                : (formatCurrency(booking.advance_amount) || 'Not paid yet')}
+            </Text>
           </View>
           {booking.remaining_amount !== undefined && (
             <View style={styles.detailRow}>

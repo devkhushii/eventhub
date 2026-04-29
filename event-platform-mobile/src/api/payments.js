@@ -39,10 +39,15 @@ export const verifyPayment = async (razorpayOrderId, razorpayPaymentId, razorpay
     razorpay_signature: razorpaySignature,
   };
 
-  console.log('[Payments API] Verifying payment...');
-  const response = await apiClient.post('/payments/verify', payload);
-  console.log('[Payments API] Verify response:', response.data);
-  return response.data;
+  console.log('[Payments API] Verifying payment with payload:', JSON.stringify(payload));
+  try {
+    const response = await apiClient.post('/payments/verify', payload);
+    console.log('[Payments API] Verify SUCCESS, response:', response.data);
+    return response.data;
+  } catch (error) {
+    console.log('[Payments API] ❌ Verify FAILED:', JSON.stringify(error?.response || error));
+    throw error;
+  }
 };
 
 export const refundPayment = async (paymentId) => {

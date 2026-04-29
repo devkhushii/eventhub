@@ -41,7 +41,7 @@ class PaymentResponse(BaseModel):
     razorpay_order_id: Optional[str]
     razorpay_payment_id: Optional[str]
 
-    created_at: Optional[str]
+    created_at: datetime
 
     class Config:
         from_attributes = True
@@ -66,8 +66,7 @@ class PaymentOrderResponse(BaseModel):
     amount: int
     currency: str
     order_id: str
-    payment_link: Optional[str]
-    qr_code: Optional[str]
+    key_id: str
     payment_type: str
     expected_amount: int
 
