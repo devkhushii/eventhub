@@ -65,9 +65,10 @@ class Payment(Base):
     razorpay_order_id = Column(String, index=True)
     razorpay_payment_id = Column(String, nullable=True)
 
-    payment_link_id = Column(String, nullable=True)
-    payment_link_url = Column(String, nullable=True)
-    qr_code_url = Column(String, nullable=True)
+    # ⚠️ DEPRECATED: legacy payment link flow (kept for compatibility)
+    # payment_link_id = Column(String, nullable=True)
+    # payment_link_url = Column(String, nullable=True)
+    # qr_code_url = Column(String, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     booking = relationship("Booking", back_populates="payments")

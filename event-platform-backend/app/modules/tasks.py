@@ -5,24 +5,25 @@ from smtplib import SMTPException
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(bind=True, max_retries=3)
-def send_verification_email_task(self, email_to: str, token: str):
-    """
-    Background task to send verification emails without blocking APIs.
-    """
-    logger.info(f"Received verification email task for {email_to}")
-    try:
-        import asyncio
-        from app.modules.auth.email_service import EmailService
-
-        # Celery evaluates synchronously, so we run the async method manually
-        asyncio.run(EmailService.send_verification_email(email_to, token))
-
-        logger.info(f"Verification email task completed for {email_to}")
-        return {"status": "success", "to": email_to}
-    except Exception as exc:
-        logger.error(f"Error sending verification email to {email_to}: {exc}")
-        raise self.retry(exc=exc, countdown=60)
+# ❌ UNUSED: Auth router explicitly bypasses this task to prevent async issues
+# @celery_app.task(bind=True, max_retries=3)
+# def send_verification_email_task(self, email_to: str, token: str):
+#     """
+#     Background task to send verification emails without blocking APIs.
+#     """
+#     logger.info(f"Received verification email task for {email_to}")
+#     try:
+#         import asyncio
+#         from app.modules.auth.email_service import EmailService
+# 
+#         # Celery evaluates synchronously, so we run the async method manually
+#         asyncio.run(EmailService.send_verification_email(email_to, token))
+# 
+#         logger.info(f"Verification email task completed for {email_to}")
+#         return {"status": "success", "to": email_to}
+#     except Exception as exc:
+#         logger.error(f"Error sending verification email to {email_to}: {exc}")
+#         raise self.retry(exc=exc, countdown=60)
 
 
 @celery_app.task(bind=True, max_retries=1)

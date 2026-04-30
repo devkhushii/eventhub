@@ -344,9 +344,9 @@ const PaymentScreen = ({ navigation, route }) => {
     console.log('[PaymentScreen] Verifying payment:', { razorpayOrderId, razorpayPaymentId });
 
     try {
-      console.log('[PaymentScreen] 📡 Calling verifyPayment API...');
+      console.log('[PaymentScreen]  Calling verifyPayment API...');
       await verifyPayment(razorpayOrderId, razorpayPaymentId, razorpaySignature);
-      console.log('[PaymentScreen] ✅ Payment verified on backend');
+      console.log('[PaymentScreen]  Payment verified on backend');
 
       setStep(STEP.VERIFYING);
 
@@ -354,7 +354,7 @@ const PaymentScreen = ({ navigation, route }) => {
 
       return true;
     } catch (error) {
-      console.error('[PaymentScreen] ❌ Verification failed:', JSON.stringify(error?.response || error));
+      console.error('[PaymentScreen]  Verification failed:', JSON.stringify(error?.response || error));
 
       const errorMessage = error.response?.data?.detail || 'Payment verification failed';
       Alert.alert('Payment Error', errorMessage);
@@ -424,39 +424,41 @@ const PaymentScreen = ({ navigation, route }) => {
     }
   }, [paymentData, bookingId, paymentType, verifyPaymentAndStartPolling]);
 
-  const handlePaymentLink = useCallback(async () => {
-    if (!paymentData?.payment_link) {
-      return;
-    }
-
-    console.log('[PaymentScreen] Opening payment link...');
-    setLoading(true);
-
-    try {
-      const canOpen = await Linking.canOpenURL(paymentData.payment_link);
-      if (canOpen) {
-        await Linking.openURL(paymentData.payment_link);
-
-        Alert.alert(
-          'Payment Initiated',
-          'Complete the payment in the browser, then return to the app to check status.',
-          [
-            { text: 'Check Status', onPress: handleDeepLink },
-            { text: 'Later', style: 'cancel' }
-          ]
-        );
-      } else {
-        Alert.alert('Error', 'Unable to open payment link');
+  /* ❌ UNUSED: Legacy Razorpay logic for opening payment links in the browser, completely replaced by handleRazorpayPayment and the native SDK
+    const handlePaymentLink = useCallback(async () => {
+      if (!paymentData?.payment_link) {
+        return;
       }
-    } catch (error) {
-      console.error('[PaymentScreen] Error opening link:', error);
-      Alert.alert('Error', 'Failed to open payment page');
-    } finally {
-      if (isMountedRef.current) {
-        setLoading(false);
+  
+      console.log('[PaymentScreen] Opening payment link...');
+      setLoading(true);
+  
+      try {
+        const canOpen = await Linking.canOpenURL(paymentData.payment_link);
+        if (canOpen) {
+          await Linking.openURL(paymentData.payment_link);
+  
+          Alert.alert(
+            'Payment Initiated',
+            'Complete the payment in the browser, then return to the app to check status.',
+            [
+              { text: 'Check Status', onPress: handleDeepLink },
+              { text: 'Later', style: 'cancel' }
+            ]
+          );
+        } else {
+          Alert.alert('Error', 'Unable to open payment link');
+        }
+      } catch (error) {
+        console.error('[PaymentScreen] Error opening link:', error);
+        Alert.alert('Error', 'Failed to open payment page');
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
       }
-    }
-  }, [paymentData, handleDeepLink]);
+    }, [paymentData, handleDeepLink]);
+  */
 
   const handleRazorpayPayment = useCallback(async () => {
     console.log('[PaymentScreen] Opening Razorpay SDK...');

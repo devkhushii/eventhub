@@ -1,3 +1,4 @@
+/* ❌ UNUSED: Test/sample screen never imported into any navigator
 /**
  * SampleNotificationScreen.js
  * 
@@ -92,25 +93,25 @@ const SampleNotificationScreen = ({ navigation }) => {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Test Local Notifications</Text>
-        
+
         <Button
           title="🔔 Trigger Test Notification"
           onPress={handleTriggerTestNotification}
           style={styles.button}
         />
-        
+
         <Button
           title="📋 Trigger with Data (Booking)"
           onPress={handleTriggerWithData}
           style={styles.button}
         />
-        
+
         <Button
           title="⏰ Schedule (5 second delay)"
           onPress={handleScheduleNotification}
           style={styles.button}
         />
-        
+
         <Button
           title="🏪 Vendor Booking Request"
           onPress={handleVendorNotification}
@@ -122,15 +123,15 @@ const SampleNotificationScreen = ({ navigation }) => {
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Actions</Text>
         </View>
-        
-        <TouchableOpacity 
+
+        <TouchableOpacity
           style={styles.actionButton}
           onPress={markAllAsRead}
         >
           <Text style={styles.actionButtonText}>Mark All as Read</Text>
         </TouchableOpacity>
-        
-        <TouchableOpacity 
+
+        <TouchableOpacity
           style={[styles.actionButton, styles.dangerButton]}
           onPress={clearNotifications}
         >
@@ -142,7 +143,7 @@ const SampleNotificationScreen = ({ navigation }) => {
         <Text style={styles.sectionTitle}>
           Recent Notifications ({notifications.length})
         </Text>
-        
+
         {notifications.length === 0 ? (
           <Text style={styles.emptyText}>
             No notifications yet. Try triggering one above!

@@ -1,363 +1,353 @@
-# Event Management Platform
+# 🎉 Event Management Platform
 
-A full-stack marketplace platform for event services connecting customers with vendors (DJs, Caterers, Decorators, Venue Owners, Event Managers, Product Sellers).
+Welcome to the **Event Management Platform**! This project is a complete full-stack solution for booking and managing events, connecting users with event vendors. It includes a mobile app for users/vendors and a powerful backend to handle bookings, real-time chat, notifications, and secure payments via Razorpay.
 
----
-
-## Architecture Overview
-
-```
-Event Management App/
-├── event-platform-backend/          # FastAPI Python backend
-│   ├── app/
-│   │   ├── api/v1/                  # API endpoints
-│   │   ├── core/                    # Core utilities (config, security, redis, celery)
-│   │   ├── db/                      # Database initialization & sessions
-│   │   ├── modules/
-│   │   │   ├── auth/                # Authentication & JWT
-│   │   │   ├── users/               # User management
-│   │   │   ├── vendors/             # Vendor profiles & verification
-│   │   │   ├── listings/            # Service listings
-│   │   │   ├── bookings/            # Booking engine
-│   │   │   ├── payments/            # Payment processing & escrow
-│   │   │   ├── reviews/             # Rating & review system
-│   │   │   ├── chat/                # Real-time messaging (WebSocket)
-│   │   │   ├── notifications/       # Push notifications
-│   │   │   └── admin/              # Admin panel
-│   │   └── shared/                  # Shared utilities & exceptions
-│   ├── scripts/                     # Database seeding scripts
-│   └── main.py                      # Application entry point
-│
-└── event-platform-mobile/           # React Native (Expo) mobile app
-    ├── src/
-    │   ├── services/               # API & notification services
-    │   ├── screens/                # App screens
-    │   ├── components/             # Reusable components
-    │   ├── navigation/             # Navigation configuration
-    │   ├── styles/                 # Theme & styling
-    │   └── utils/                  # Helpers & constants
-    └── package.json
-```
+Whether you are a beginner or an experienced developer, this guide will walk you through everything you need to know to set up and run the project locally.
 
 ---
 
-## Technology Stack
+## 1. 🚀 Project Overview
+
+**What does it do?**
+This platform allows users to browse event listings (like venues, decorators, or caterers) and book them. Vendors can list their services, manage bookings, and chat with users. 
+
+**Key Features:**
+- **Role-Based Access:** Separate experiences for Users, Vendors, and Admins.
+- **Escrow Payment Flow:** Secure booking process where users pay an advance, followed by a final payment after the service.
+- **Razorpay Integration:** Seamless native payments using Razorpay SDK.
+- **Real-Time Notifications & Chat:** Keep users and vendors connected.
+- **Background Tasks:** Email delivery and payment verification handled via Celery.
+
+---
+
+## 2. 🛠 Tech Stack
+
+### Frontend (Mobile App)
+- **Framework:** React Native & Expo (Dev Client required for native modules)
+- **Navigation:** React Navigation
+- **API Client:** Axios
+- **Payments:** `react-native-razorpay`
 
 ### Backend
-| Component | Technology |
-|-----------|------------|
-| Framework | FastAPI |
-| Database | PostgreSQL |
-| ORM | SQLAlchemy |
-| Authentication | JWT (python-jose) |
-| Caching | Redis |
-| Background Tasks | Celery |
-| Real-time | WebSockets |
-| Payments | Razorpay |
-| Push Notifications | Expo FCM |
+- **Framework:** FastAPI (Python)
+- **Database:** PostgreSQL (with SQLAlchemy ORM)
+- **Cache & Message Broker:** Redis
+- **Background Workers:** Celery
+- **Payments:** Razorpay Python SDK
 
-### Mobile App
-| Component | Technology |
-|-----------|------------|
-| Framework | React Native (Expo) |
-| Navigation | React Navigation |
-| HTTP Client | Axios |
-| Storage | AsyncStorage |
-| Payments | react-native-razorpay |
-| Notifications | expo-notifications |
+### Other Tools
+- **Docker & Docker Compose:** For containerized, hassle-free backend setup.
 
 ---
 
-## Database Schema
+## 3. 📦 Prerequisites
 
-### Core Tables
-- **users**: Authentication & user profiles
-- **vendors**: Vendor profiles with verification status
-- **listings**: Service offerings from vendors
-- **bookings**: Booking orders with status lifecycle
-- **payments**: Payment transactions
-- **reviews**: User ratings & comments
-- **notifications**: Push notification history
-- **chat_messages**: Real-time messaging
+Before you start, make sure you have the following installed on your computer:
 
-### Key Relationships
-- User → Vendor: 1:1 (optional)
-- Vendor → Listings: 1:many
-- Listing → Bookings: 1:many
-- Booking → Payment: 1:1
-- Booking → Review: 1:1
+- **Node.js** (v18+ recommended) - [Download Here](https://nodejs.org/)
+- **Python** (v3.10+ recommended) - [Download Here](https://www.python.org/downloads/)
+- **Docker Desktop** (Required for running DB/Redis easily) - [Download Here](https://www.docker.com/products/docker-desktop)
+- **Expo CLI** - Installed globally via `npm install -g expo-cli`
+- **Git** - [Download Here](https://git-scm.com/)
+- **Android Studio / Xcode** - For running mobile emulators (or you can use a physical device).
 
 ---
 
-## Features
+## 4. 📁 Project Structure
 
-### Authentication & Authorization
-- JWT-based authentication
-- Role-based access control (Customer, Vendor, Admin)
-- Vendor verification workflow (PENDING → APPROVED/REJECTED)
+The project is split into two main folders:
 
-### Vendor Management
-- Vendor registration with category selection
-- Business profile management
-- Verification status tracking
-- Service listings management
-
-### Booking System
-- Availability checking
-- Double-booking prevention with transaction locking
-- Booking status lifecycle: PENDING → CONFIRMED → COMPLETED
-
-### Payment Processing
-- Razorpay integration
-- Escrow-style payment hold
-- Platform commission tracking
-- Vendor payout management
-
-### Real-time Features
-- WebSocket-based chat
-- Push notifications (Expo)
-- Live booking status updates
-
-### Review System
-- Post-booking reviews
-- Rating aggregation
-- Vendor ranking
+```text
+eventhub/
+│
+├── event-platform-mobile/      # The React Native (Expo) frontend
+│   ├── src/                    # Source code (screens, components, api, navigation)
+│   ├── app.json                # Expo config file
+│   └── package.json            # Node dependencies
+│
+└── event-platform-backend/     # The FastAPI backend
+    ├── app/                    # Source code
+    │   ├── core/               # Core configs, DB setup, Celery app
+    │   └── modules/            # Domain logic (auth, bookings, payments, etc.)
+    ├── scripts/                # Database seeding & utility scripts
+    ├── docker-compose.yml      # Docker setup for local services
+    └── requirements.txt        # Python dependencies
+```
 
 ---
 
-## Getting Started
+## 5. 🔑 Environment Setup
 
-### Prerequisites
-- Python 3.10+
-- Node.js 18+
-- PostgreSQL
-- Redis
+Both the backend and frontend need environment variables to work correctly.
 
-### Backend Setup
+### Backend `.env`
+Create a file named `.env` inside the `event-platform-backend/` folder and add the following required variables:
 
-1. **Install dependencies**:
-```bash
-cd event-platform-backend
-uv sync
+```env
+# App
+PROJECT_NAME=EventHub
+ENVIRONMENT=development
+DEBUG=True
+
+# Database & Redis (Matches docker-compose.yml settings)
+DATABASE_URL=postgresql://postgres:postgres@db:5432/eventhub
+REDIS_URL=redis://redis:6379/0
+CELERY_BROKER_URL=redis://redis:6379/0
+CELERY_RESULT_BACKEND=redis://redis:6379/0
+
+# Security
+SECRET_KEY=your_super_secret_jwt_key
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
+REFRESH_TOKEN_EXPIRE_DAYS=7
+
+# Email Settings (Configure your SMTP provider, e.g., Gmail)
+MAIL_USERNAME=your_email@gmail.com
+MAIL_PASSWORD=your_app_password
+MAIL_FROM=your_email@gmail.com
+MAIL_PORT=587
+MAIL_SERVER=smtp.gmail.com
+MAIL_STARTTLS=True
+MAIL_SSL_TLS=False
+
+# Payment Settings (Get these from Razorpay Dashboard)
+RAZORPAY_KEY_ID=rzp_test_your_key_id
+RAZORPAY_KEY_SECRET=your_razorpay_secret
 ```
 
-2. **Initialize database** (first time only):
+---
+
+## 6. 🐳 Docker Setup (Recommended Backend Setup)
+
+Using Docker is the easiest way to run the backend because it automatically sets up PostgreSQL, Redis, FastAPI, and Celery.
+
+1. Open your terminal and navigate to the backend folder:
+   ```bash
+   cd event-platform-backend
+   ```
+2. Start all services using Docker Compose:
+   ```bash
+   docker-compose up --build
+   ```
+3. Your backend API is now running at `http://localhost:8000`. You can view the interactive API docs at `http://localhost:8000/docs`.
+
+*(Note: If you prefer running it manually without Docker, you will need to install your own PostgreSQL and Redis servers, run `pip install -r requirements.txt`, start `uvicorn app.main:app --reload`, and start `celery -A app.core.celery_app worker` in separate terminals).*
+
+---
+
+## 7. 📱 Frontend Setup
+
+Because this project uses the native `react-native-razorpay` SDK, you cannot use the standard "Expo Go" app. You must use an **Expo Dev Client**.
+
+1. Open a new terminal and navigate to the frontend folder:
+   ```bash
+   cd event-platform-mobile
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Update the API Base URL:
+   Ensure your API client (likely in `src/utils/apiClient.js` or `src/api/config.js`) points to your local machine's IP address (e.g., `http://192.168.1.x:8000/api/v1`) instead of `localhost`, so your phone/emulator can reach it.
+4. Start the Expo Dev Client:
+   ```bash
+   npx expo start --dev-client
+   ```
+5. Run on your device:
+   - Press `a` to open on Android Emulator.
+   - Press `i` to open on iOS Simulator.
+   - Or scan the QR code using a physical device with a pre-built dev client installed.
+
+---
+
+## 8. 📦 Expo Dev Client Setup (IMPORTANT)
+
+**Why a Dev Build is Required:**
+This project uses `react-native-razorpay` for secure payments, which requires native iOS and Android modules. Because of this, the standard "Expo Go" app **WILL NOT WORK**. You must use an Expo Dev Client.
+
+**Build Dev Client Locally:**
+Run the following in the project root (`event-platform-mobile/`):
 ```bash
-uv run python -m app.db.init_db
+npx expo run:android
+# or for iOS
+npx expo run:ios
 ```
 
-3. **Seed required data**:
+**OR using EAS (Expo Application Services):**
+If you prefer cloud builds or need to generate native directories:
 ```bash
-uv run python -m scripts.seed_listing_fields
-```
-
-4. **Generate fake data** (optional):
-```bash
-uv run python -m scripts.generate_fake_data
-```
-
-5. **Start the server**:
-```bash
-uv run uvicorn main:app --reload
-```
-
-The API will be available at:
-- API: http://127.0.0.1:8000
-- Docs: http://127.0.0.1:8000/docs
-
-### Mobile App Setup
-
-1. **Install dependencies**:
-```bash
-cd event-platform-mobile
-npm install
-```
-
-2. **Start the development server**:
-```bash
-npx expo start
-```
-
-3. **Run on Android**:
-```bash
+npx expo prebuild
 npx expo run:android
 ```
 
-4. **Run on iOS**:
+---
+
+## 9. 📱 Running on Real Device (USB - Android)
+
+### 1. Enable Developer Options
+- Go to **Settings** → **About Phone**
+- Tap **"Build Number"** 7 times to enable Developer Options.
+
+### 2. Enable USB Debugging
+- Go to **Settings** → **Developer Options**
+- Enable **USB Debugging**.
+
+### 3. Install ADB
+Check if Android Debug Bridge (ADB) is installed:
 ```bash
+adb version
+```
+*If not installed, download and install the **Android SDK Platform Tools**.*
+
+### 4. Connect Device
+Connect your phone via USB and run:
+```bash
+adb devices
+```
+*👉 If it shows `unauthorized`, look at your phone screen and accept the USB debugging prompt.*
+
+### 5. Run App on Device
+Run this in the project root:
+```bash
+npx expo run:android
+```
+*OR (if you already have the dev client installed on the phone):*
+```bash
+npx expo start
+```
+Then press `a` in the terminal to launch the app.
+
+---
+
+## 10. 🤖 Android Native Build Setup
+
+**Prerequisites:**
+- Android Studio installed.
+- Android SDK and Emulator configured.
+
+**Run Locally:**
+```bash
+# run this in project root
+npx expo run:android
+```
+
+**Build APK (Optional):**
+If you want to build a standalone APK for testing:
+```bash
+cd android
+./gradlew assembleDebug
+```
+*APK Location:* `android/app/build/outputs/apk/debug/app-debug.apk`
+
+---
+
+## 11. 🍏 iOS Setup (Mac only)
+
+**Prerequisites:**
+- macOS operating system.
+- Xcode installed from the App Store.
+- CocoaPods installed (`sudo gem install cocoapods`).
+
+**Install Pods:**
+```bash
+cd ios
+pod install
+```
+
+**Run App:**
+```bash
+# run this in project root
 npx expo run:ios
 ```
 
 ---
 
-## Environment Variables
+## 12. 💳 Payment Setup (Razorpay)
 
-### Backend (.env)
-```env
-DATABASE_URL=postgresql://user:password@localhost:5432/eventdb
-REDIS_URL=redis://localhost:6379
-JWT_SECRET=your-secret-key
-RAZORPAY_KEY_ID=your-razorpay-key
-RAZORPAY_KEY_SECRET=your-razorpay-secret
-EXPO_ACCESS_TOKEN=your-expo-token
-```
-
-### Mobile App
-Configure API base URL in `src/utils/constants.js`
+To process test payments:
+1. Go to [Razorpay](https://razorpay.com/) and create a free account.
+2. Switch to **Test Mode**.
+3. Generate API Keys (Key ID and Key Secret) in the dashboard settings.
+4. Add these keys to your backend `.env` file (as shown in Step 5).
+5. During checkout in the app, use the **Razorpay Test Cards** (e.g., card number `4111 1111 1111 1111`) to simulate successful payments.
 
 ---
 
-## API Endpoints Overview
+## 13. ▶️ Running the Full App (Quick Summary)
 
-| Module | Endpoints |
-|--------|-----------|
-| Auth | /api/v1/auth/register, /login, /verify |
-| Users | /api/v1/users/me, /update-profile |
-| Vendors | /api/v1/vendors, /:id, /verify |
-| Listings | /api/v1/listings, /search, /:id |
-| Bookings | /api/v1/bookings, /:id/confirm, /:id/cancel |
-| Payments | /api/v1/payments/create, /webhook |
-| Reviews | /api/v1/reviews, /:vendor-id |
-| Chat | WebSocket /ws/chat/:conversation_id |
-| Notifications | /api/v1/notifications, /register-token |
+Always follow this exact order when starting your development day:
 
----
-
-## Testing
-
-### Backend Tests
-```bash
-cd event-platform-backend
-uv run pytest
-```
-
-### Load Testing
-```bash
-cd event-platform-backend
-uv run locust -f locustfile.py
-```
+1. **Start Backend (Terminal 1):**
+   ```bash
+   cd event-platform-backend
+   docker-compose up
+   ```
+2. **Start Frontend (Terminal 2):**
+   ```bash
+   cd event-platform-mobile
+   npx expo start --dev-client
+   ```
 
 ---
 
-## Project Structure
+## 14. 🧪 Testing Flow
 
-```
-event-platform-backend/
-├── app/
-│   ├── api/v1/           # API routers
-│   ├── core/             # Config, security, redis, celery
-│   ├── db/               # Database setup
-│   ├── modules/          # Business logic modules
-│   └── shared/           # Common utilities
-├── scripts/              # Utility scripts
-├── pyproject.toml        # Python dependencies
-└── main.py               # App entry point
-
-event-platform-mobile/
-├── src/
-│   ├── services/         # API clients
-│   ├── screens/          # App screens
-│   ├── components/       # UI components
-│   ├── navigation/      # Navigation setup
-│   ├── styles/          # Theme files
-│   └── utils/           # Helpers
-├── package.json          # Node dependencies
-└── app.json              # Expo config
-```
+To test the core functionality:
+1. **Register** a new User account and a new Vendor account.
+2. As a Vendor, **Create a Listing**.
+3. As a User, browse to the listing and **Create a Booking**.
+4. Pay the **Advance Amount** via the Razorpay test UI.
+5. The backend will verify the payment and transition the booking status to `AWAITING_FINAL_PAYMENT` (which shows as "Booking Confirmed ✅" in the UI).
+6. Complete the **Final Payment** to mark the booking as `COMPLETED`.
 
 ---
 
-## Development Notes
+## 15. ❗ Common Errors & Fixes
 
-### Backend
-- Uses repository pattern for data access
-- Service layer for business logic
-- WebSocket manager for real-time features
-- Celery tasks for background jobs
+- **Device not showing in adb:**
+  ```bash
+  adb kill-server
+  adb start-server
+  adb devices
+  ```
 
-### Mobile
-- React Navigation for screen management
-- Context API for state management
-- Axios interceptors for auth tokens
-- Toast messages for feedback
+- **Unauthorized device:**
+  Accept the popup on your phone screen when connecting via USB.
+
+- **Razorpay not opening / "Module not found":**
+  Ensure you are using a dev build (**NOT** Expo Go).
+
+- **Metro issues / Cache issues:**
+  ```bash
+  npx expo start --clear
+  ```
+
+- **Port issues:**
+  If port 8081 is in use, start Metro on another port:
+  ```bash
+  npx expo start --port 8082
+  ```
+
+- **iOS build issues:**
+  ```bash
+  cd ios
+  pod install --repo-update
+  ```
+
+- **Network Error / Axios Error:**
+  The frontend is trying to connect to `localhost`. Change the base API URL to your computer's local Wi-Fi IP address (e.g., `192.168.1.100`).
+
+- **Payments remain "PENDING":**
+  Check the backend Docker logs. Ensure your Razorpay API keys in `.env` are correct. The backend `verify_payment` API must be hit successfully for the status to update.
+
+- **Database connection failed:**
+  Make sure Docker Desktop is running and the `db` container is healthy before the `api` container starts.
 
 ---
 
-## Docker Deployment
+## 16. 📌 Notes for Beginners
 
-### Quick Start with Docker Compose
+- **Take your time:** Full-stack apps have many moving parts. If something breaks, look at the terminal logs first. The backend logs will tell you exactly why an API request failed.
+- **Do not commit `.env`:** Never upload your `.env` file containing secrets to GitHub. It is already added to `.gitignore`.
+- **Database Migrations:** If you change `models.py` in the backend, remember to update your database schema or drop and recreate your tables if you are just in early development.
 
-1. **Create environment file** (`event-platform-backend/.env`):
-```env
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_DB=eventhub
-SECRET_KEY=your-jwt-secret-key
-RAZORPAY_KEY_ID=your-razorpay-key
-RAZORPAY_KEY_SECRET=your-razorpay-secret
-MAIL_USERNAME=your-email@gmail.com
-MAIL_PASSWORD=your-app-password
-MAIL_FROM=noreply@eventhub.com
-MAIL_SERVER=smtp.gmail.com
-MAIL_PORT=587
-MAIL_STARTTLS=true
-MAIL_SSL_TLS=false
-```
-
-2. **Build and run all services**:
-```bash
-cd event-platform-backend
-docker-compose up --build
-```
-
-3. **Services available at**:
-   - API: http://localhost:8000
-   - API Docs: http://localhost:8000/docs
-
-### Docker Services Architecture
-
-| Service | Description | Port |
-|---------|-------------|------|
-| db | PostgreSQL 15 | 5432 |
-| redis | Redis 7 | 6379 |
-| api | FastAPI application | 8000 |
-| worker | Celery background tasks | - |
-| nginx | Reverse proxy & load balancer | 8000 |
-
-### Docker Commands
-
-```bash
-# Start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f api
-
-# Stop all services
-docker-compose down
-
-# Rebuild and start
-docker-compose up --build
-
-# Run database migrations
-docker-compose exec api uv run python -m app.db.init_db
-
-# Seed data
-docker-compose exec api uv run python -m scripts.seed_listing_fields
-docker-compose exec api uv run python -m scripts.generate_fake_data
-
-# Access container shell
-docker-compose exec api sh
-```
-
-### Production Deployment
-
-The Dockerfile uses Gunicorn with Uvicorn workers for production:
-```dockerfile
-CMD ["gunicorn", "main:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
-```
-
-Nginx is configured as a reverse proxy with:
-- Request logging
-- Static file serving
-- Load balancing (ready for scaling)

@@ -26,16 +26,17 @@ def create_order(amount):
     )
 
 
-def create_payment_link(amount, customer):
-    return client.payment_link.create(
-        {
-            "amount": amount * 100,
-            "currency": "INR",
-            "description": "Booking Payment",
-            "customer": customer,
-            "reference_id": f"payment_link_{uuid.uuid4().hex[:8]}",
-        }
-    )
+# UNUSED: Legacy Razorpay payment link flow (app now uses SDK flow)
+# def create_payment_link(amount, customer):
+#     return client.payment_link.create(
+#         {
+#             "amount": amount * 100,
+#             "currency": "INR",
+#             "description": "Booking Payment",
+#             "customer": customer,
+#             "reference_id": f"payment_link_{uuid.uuid4().hex[:8]}",
+#         }
+#     )
 
 
 def verify_signature(order_id, payment_id, signature):

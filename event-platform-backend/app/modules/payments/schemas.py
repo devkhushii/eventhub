@@ -36,8 +36,9 @@ class PaymentResponse(BaseModel):
     escrow_amount: int
     vendor_released_amount: int
 
-    payment_link_url: Optional[str]
-    qr_code_url: Optional[str]
+    #  UNUSED: Dead schema fields for the old payment link flow
+    # payment_link_url: Optional[str]
+    # qr_code_url: Optional[str]
     razorpay_order_id: Optional[str]
     razorpay_payment_id: Optional[str]
 

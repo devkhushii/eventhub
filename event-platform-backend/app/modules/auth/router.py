@@ -85,6 +85,7 @@ async def verify_email(token: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+# UNUSED: The frontend uses /password-reset/confirm, and this specific validation endpoint is never called
 @router.get("/reset-password")
 def validate_reset_token(token: str, db: Session = Depends(get_db)):
     try:
@@ -119,22 +120,22 @@ def confirm_reset(request: PasswordResetConfirm, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-# DEBUG ENDPOINT: Test email delivery
-@router.get("/test-email")
-async def test_email():
-    """Debug endpoint to test email delivery"""
-    import secrets
-
-    test_token = secrets.token_urlsafe(32)
-    print("=" * 60)
-    print("TEST EMAIL ENDPOINT CALLED")
-    print("=" * 60)
-
-    try:
-        await EmailService.send_verification_email(
-            "devkhushii.16@gmail.com", test_token
-        )
-        return {"message": "Test email sent successfully", "token": test_token}
-    except Exception as e:
-        print(f"TEST EMAIL FAILED: {str(e)}")
-        return {"message": "Test email failed", "error": str(e)}, 500
+# ❌ UNUSED: Debug endpoint, no longer needed
+# @router.get("/test-email")
+# async def test_email():
+#     """Debug endpoint to test email delivery"""
+#     import secrets
+# 
+#     test_token = secrets.token_urlsafe(32)
+#     print("=" * 60)
+#     print("TEST EMAIL ENDPOINT CALLED")
+#     print("=" * 60)
+# 
+#     try:
+#         await EmailService.send_verification_email(
+#             "devkhushii.16@gmail.com", test_token
+#         )
+#         return {"message": "Test email sent successfully", "token": test_token}
+#     except Exception as e:
+#         print(f"TEST EMAIL FAILED: {str(e)}")
+#         return {"message": "Test email failed", "error": str(e)}, 500
