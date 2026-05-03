@@ -22,6 +22,8 @@ class BookingStatus(str, enum.Enum):
     AWAITING_FINAL_PAYMENT = "AWAITING_FINAL_PAYMENT"
     REJECTED = "REJECTED"
     CANCELLED = "CANCELLED"
+    PAYMENT_FAILED = "PAYMENT_FAILED"
+    RETRY_PAYMENT = "RETRY_PAYMENT"
 
 
 class AdvancePaymentStatus(str, enum.Enum):
