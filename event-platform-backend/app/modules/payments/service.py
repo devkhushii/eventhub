@@ -126,6 +126,9 @@ class PaymentService:
     @staticmethod
     def _calculate_expected_amount(booking, payment_type: str) -> int:
         """Calculate expected amount on backend - NEVER trust frontend amount."""
+        print(
+            f"[Payment] _calculate_expected_amount: booking.total_price={booking.total_price}, payment_type={payment_type}"
+        )
         if payment_type == "ADVANCE":
             expected = int(booking.total_price * ADVANCE_PERCENTAGE)
         else:
@@ -133,6 +136,7 @@ class PaymentService:
             expected = int(
                 booking.total_price - (booking.total_price * ADVANCE_PERCENTAGE)
             )
+        print(f"[Payment] Expected amount: {expected}")
         return expected
 
     @staticmethod

@@ -151,6 +151,15 @@ const VendorBookingsScreen = ({ navigation }) => {
         bookingsData = bookingsData.filter(b => b.status === filter);
       }
       
+      console.log('[VendorBookings] Debug - Fetched bookings:', 
+        bookingsData.slice(0, 3).map(b => ({
+          id: b.id?.substring(0, 8),
+          totalPrice: b.total_price,
+          totalDays: b.total_days,
+          listingPrice: b.listing?.price,
+        }))
+      );
+      
       setBookings(bookingsData);
     } catch (error) {
       console.error('[VendorBookings] Failed to fetch:', error);

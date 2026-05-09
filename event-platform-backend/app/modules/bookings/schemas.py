@@ -51,6 +51,7 @@ class BookingResponse(BaseModel):
     listing_id: UUID
     event_date: datetime
     end_date: Optional[datetime]
+    total_days: Optional[int] = None
     total_price: float
     status: BookingStatus
     advance_amount: Optional[float] = None
@@ -94,6 +95,7 @@ class VendorBookingResponse(BaseModel):
     id: UUID
     event_date: datetime
     end_date: Optional[datetime]
+    total_days: Optional[int] = None
     total_price: float
     status: BookingStatus
     advance_amount: Optional[float] = None

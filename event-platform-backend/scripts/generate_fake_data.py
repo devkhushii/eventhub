@@ -368,7 +368,13 @@ def create_bookings(users, listings, n=60):
         event_date = datetime.now(timezone.utc) + timedelta(days=random.randint(5, 120))
         end_date = event_date + timedelta(hours=random.choice([4, 6, 8, 12]))
 
-        total_price = listing.price * random.uniform(0.8, 1.5)
+        if end_date and end_date > event_date:
+            total_days = (end_date.date() - event_date.date()).days + 1
+        else:
+            total_days = 1
+
+        # total_price is now based on listing price × total_days (like production)
+        total_price = listing.price * total_days
         advance_amount = round(total_price * 0.3, 2)
 
         status = get_random_safe(BOOKING_STATUSES) or BookingStatus.PENDING
@@ -393,6 +399,7 @@ def create_bookings(users, listings, n=60):
             listing_id=listing.id,
             event_date=event_date,
             end_date=end_date,
+            total_days=total_days,
             total_price=round(total_price, 2),
             status=status,
             advance_amount=advance_amount if random.choice([True, False]) else None,
@@ -459,8 +466,8 @@ def create_payments(bookings):
                     escrow_amount=advance_amount_cents - vendor_released,
                     razorpay_order_id=f"order_{fake.uuid4().replace('-', '')[:20]}",
                     razorpay_payment_id=f"pay_{fake.uuid4().replace('-', '')[:20]}",
-                    payment_link_id=f"pl_{fake.uuid4().replace('-', '')[:12]}",
-                    payment_link_url=f"https://razorpay.com/payment/{fake.uuid4()[:12]}",
+                    # payment_link_id=f"pl_{fake.uuid4().replace('-', '')[:12]}",
+                    # payment_link_url=f"https://razorpay.com/payment/{fake.uuid4()[:12]}",
                 )
                 db.add(payment)
                 payments.append(payment)

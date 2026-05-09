@@ -16,6 +16,14 @@ const BookingCard = ({ booking, onPress, variant = 'user' }) => {
   const eventDate = booking.event_date ? formatDate(booking.event_date) : 'Date not set';
   const price = booking.total_price || booking.listing?.price;
 
+  console.log('[BookingCard] Rendering:', {
+    bookingId: booking.id,
+    totalPrice: booking.total_price,
+    totalDays: booking.total_days,
+    listingPrice: booking.listing?.price,
+    displayedPrice: price
+  });
+
   return (
     <TouchableOpacity
       style={[styles.card, shadows.medium]}

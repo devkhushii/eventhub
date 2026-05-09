@@ -3,14 +3,22 @@
 
 import uuid
 import enum
-from sqlalchemy import Column, ForeignKey, DateTime, Float, String, Text, Boolean
+from sqlalchemy import (
+    Column,
+    ForeignKey,
+    DateTime,
+    Float,
+    String,
+    Text,
+    Boolean,
+    Integer,
+)
 from sqlalchemy import Enum as SQLEnum
 
 from sqlalchemy.dialects.postgresql import UUID  # type: ignore
 from sqlalchemy.orm import relationship  # type: ignore
 from sqlalchemy.sql import func  # type: ignore
 from app.db.base import Base
-
 
 
 class BookingStatus(str, enum.Enum):
@@ -47,20 +55,21 @@ class Booking(Base):
 
     event_date = Column(DateTime, nullable=False, index=True)
     end_date = Column(DateTime, nullable=True)
+    total_days = Column(Integer, nullable=True)
 
     total_price = Column(Float, nullable=False)
     status = Column(
-                SQLEnum(BookingStatus, name="booking_status_enum"),
-                default=BookingStatus.PENDING,
-                index=True
-            )
+        SQLEnum(BookingStatus, name="booking_status_enum"),
+        default=BookingStatus.PENDING,
+        index=True,
+    )
 
     advance_amount = Column(Float, nullable=True)
     advance_paid = Column(Boolean, default=False)
     advance_payment_status = Column(
-                                SQLEnum(AdvancePaymentStatus, name="advance_payment_status_enum"),
-                                default=AdvancePaymentStatus.NONE
-                                )
+        SQLEnum(AdvancePaymentStatus, name="advance_payment_status_enum"),
+        default=AdvancePaymentStatus.NONE,
+    )
 
     special_request = Column(Text, nullable=True)
 

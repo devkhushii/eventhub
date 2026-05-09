@@ -71,6 +71,11 @@ const PaymentScreen = ({ navigation, route }) => {
     isSimulation,
   });
 
+  console.log('[PaymentScreen] Debug - Received amounts:', {
+    paramAmount: amount,
+    paramTotalPrice: totalPrice,
+  });
+
   const [step, setStep] = useState(STEP.REVIEW);
   const [loading, setLoading] = useState(false);
   const [paymentData, setPaymentData] = useState(null);
@@ -208,6 +213,14 @@ const PaymentScreen = ({ navigation, route }) => {
     try {
       const bookings = await bookingsApi.getMyBookings();
       const booking = bookings.find(b => b.id === bookingId);
+
+      console.log('[PaymentScreen] Fetched booking debug:', {
+        bookingId: booking?.id,
+        totalPrice: booking?.total_price,
+        totalDays: booking?.total_days,
+        advanceAmount: booking?.advance_amount,
+        listingPrice: booking?.listing?.price,
+      });
 
       if (!booking) {
         Alert.alert(

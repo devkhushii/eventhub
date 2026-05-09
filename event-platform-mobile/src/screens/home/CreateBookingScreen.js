@@ -81,11 +81,53 @@ const CreateBookingScreen = ({ navigation, route }) => {
     ? getImageSource(listing.images?.[0]?.image_url || listing.image_url)
     : null;
 
+  const calculateTotalDays = (start, end) => {
+    if (!start || !end) {
+      return 1;
+    }
+    try {
+      const startDate = new Date(start);
+      const endDateObj = new Date(end);
+      if (isNaN(startDate.getTime())) {
+        return 1;
+      }
+      if (isNaN(endDateObj.getTime())) {
+        return 1;
+      }
+      if (endDateObj < startDate) {
+        return 1;
+      }
+      const diffTime = endDateObj.getTime() - startDate.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      return diffDays > 0 ? diffDays : 1;
+    } catch {
+      return 1;
+    }
+  };
+
+  const totalDays = calculateTotalDays(eventDate, endDate);
+  const perDayPrice = listing?.price || 0;
+  const calculatedTotal = perDayPrice * totalDays;
+
   const handleBook = async () => {
     if (bookingCreated) return;
 
     const newErrors = {};
     if (!eventDate) newErrors.eventDate = 'Please select an event date';
+
+    if (eventDate && endDate) {
+      try {
+        const startD = new Date(eventDate);
+        const endD = new Date(endDate);
+        if (!isNaN(startD.getTime()) && !isNaN(endD.getTime())) {
+          if (endD < startD) {
+            newErrors.endDate = 'End date cannot be before start date';
+          }
+        }
+      } catch (e) {
+        // Ignore parsing errors
+      }
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -93,6 +135,7 @@ const CreateBookingScreen = ({ navigation, route }) => {
     }
 
     setLoading(true);
+    let newBooking = null;
     try {
       let formattedEventDate = eventDate;
       if (eventDate && !eventDate.includes('T')) {
@@ -104,11 +147,18 @@ const CreateBookingScreen = ({ navigation, route }) => {
         formattedEndDate = endDate.includes('T') ? endDate : `${endDate}T00:00:00Z`;
       }
 
-      await bookingsApi.createBooking({
+      newBooking = await bookingsApi.createBooking({
         listing_id: listing?.id,
         event_date: formattedEventDate,
         end_date: formattedEndDate,
         special_request: specialRequest,
+      });
+      
+      console.log('[CreateBookingScreen] Booking created - Backend response:', {
+        id: newBooking?.id,
+        totalPrice: newBooking?.total_price,
+        totalDays: newBooking?.total_days,
+        advanceAmount: newBooking?.advance_amount,
       });
       
       setBookingCreated(true);
@@ -151,7 +201,7 @@ const CreateBookingScreen = ({ navigation, route }) => {
                 </View>
               )}
               <View style={styles.priceRow}>
-                <Text style={styles.priceLabel}>Price</Text>
+                <Text style={styles.priceLabel}>Price per day</Text>
                 <Text style={styles.listingPrice}>{formatCurrency(listing.price)}</Text>
               </View>
             </View>
@@ -191,11 +241,18 @@ const CreateBookingScreen = ({ navigation, route }) => {
       </ScrollView>
 
       <View style={styles.footer}>
-        <View style={styles.priceFooter}>
-          <Text style={styles.footerPriceLabel}>Total</Text>
-          <Text style={styles.footerPrice}>
-            {formatCurrency(listing?.price || 0)}
-          </Text>
+        <View style={styles.priceBreakdown}>
+          <View style={styles.priceRowCalc}>
+            <Text style={styles.priceLabelCalc}>
+              {perDayPrice ? `${formatCurrency(perDayPrice)} x ${totalDays} day${totalDays > 1 ? 's' : ''}` : 'Total'}
+            </Text>
+          </View>
+          <View style={styles.totalRow}>
+            <Text style={styles.footerPriceLabel}>Total</Text>
+            <Text style={styles.footerPrice}>
+              {formatCurrency(calculatedTotal)}
+            </Text>
+          </View>
         </View>
         <Button
           title={bookingCreated ? 'Requested' : 'Book Now'}
@@ -291,6 +348,25 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.divider,
     ...shadows.medium,
+  },
+  priceBreakdown: {
+    marginBottom: 12,
+  },
+  priceRowCalc: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  priceLabelCalc: {
+    fontSize: 14,
+    color: colors.textMuted,
+    fontWeight: '500',
+  },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   priceFooter: {
     flexDirection: 'row',

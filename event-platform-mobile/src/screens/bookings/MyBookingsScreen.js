@@ -86,6 +86,24 @@ const MyBookingsScreen = ({ navigation }) => {
       }
 
       console.log('[MyBookings] Normalized bookings:', normalizedBookings.length);
+      console.log('[MyBookings] Debug sample:', normalizedBookings.slice(0, 2).map(b => {
+        // Handle both snake_case from API and legacy data
+        const days = b.total_days || b.totalDays;
+        const price = b.total_price || b.totalPrice;
+        const listPrice = b.listing?.price;
+        console.log('[MyBookings] Raw booking data:', JSON.stringify({ 
+          total_days: b.total_days, 
+          totalDays: b.totalDays,
+          total_price: b.total_price,
+          totalPrice: b.totalPrice 
+        }));
+        return {
+          id: b.id?.substring(0, 8),
+          totalPrice: price,
+          totalDays: days,
+          listingPrice: listPrice,
+        };
+      }));
       if (isMounted.current) {
         setBookings(normalizedBookings);
       }

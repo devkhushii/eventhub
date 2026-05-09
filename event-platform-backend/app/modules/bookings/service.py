@@ -3,7 +3,7 @@
 from sqlalchemy.orm import Session  # type: ignore
 from uuid import UUID
 from fastapi import HTTPException  # type: ignore
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Tuple, List
 from .repository import BookingRepository
 from .models import Booking, BookingStatus
@@ -50,14 +50,34 @@ class BookingService:
         if existing:
             raise HTTPException(status_code=400, detail="Already booked for this date")
 
-        advance_amount = data.advance_amount or (listing.price * 0.3)
+        print(f"[Bookings] DEBUG: listing.price={listing.price}, data.event_date={data.event_date}, data.end_date={data.end_date}")
+        print(f"[Bookings] DEBUG: end_date type={type(data.end_date)}, end_date is None={data.end_date is None}")
+        
+        if data.end_date:
+            total_days = (data.end_date.date() - data.event_date.date()).days + 1
+        else:
+            total_days = 1
+        
+        print(f"[Bookings] DEBUG: calculated total_days={total_days}, FORCE TO at least 1")
+
+        # Ensure total_days is at least 1 (handles edge cases)
+        if not total_days or total_days < 1:
+            total_days = 1
+
+        total_price = listing.price * total_days
+        advance_amount = data.advance_amount or (total_price * 0.3)
+
+        print(
+            f"[Bookings] Creating booking: listing.price={listing.price}, total_days={total_days}, total_price={total_price}, advance_amount={advance_amount}"
+        )
 
         booking = Booking(
             user_id=user_id,
             listing_id=data.listing_id,
             event_date=data.event_date,
             end_date=data.end_date,
-            total_price=listing.price,
+            total_days=total_days,
+            total_price=total_price,
             special_request=data.special_request,
             advance_amount=advance_amount,
             status=BookingStatus.PENDING,
@@ -65,8 +85,12 @@ class BookingService:
 
         created_booking = BookingRepository.create(db, booking)
 
+        print(
+            f"[Bookings] Returning booking: id={created_booking.id}, total_price={created_booking.total_price}, total_days={created_booking.total_days}"
+        )
+
         from app.modules.notifications.trigger import notification_trigger
-       
+
         vendor_id = listing.vendor.user_id if listing.vendor else None
         if vendor_id:
             import asyncio

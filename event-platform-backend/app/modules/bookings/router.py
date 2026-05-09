@@ -20,7 +20,15 @@ def create_booking(
     current_user: User = Depends(get_current_user),
 ):
     print("[Bookings API] POST /bookings - create_booking called")
-    return BookingService.create_booking(db, current_user.id, data)
+    print(
+        f"[Bookings API] Input data: listing_id={data.listing_id}, event_date={data.event_date}, end_date={data.end_date}"
+    )
+    booking = BookingService.create_booking(db, current_user.id, data)
+    print(
+        f"[Bookings API] Returning booking: id={booking.id}, total_price={booking.total_price}, total_days={booking.total_days}, advance_amount={booking.advance_amount}"
+    )
+    print(f"[Bookings API] Response dict keys: {booking.__dict__.keys()}")
+    return booking
 
 
 @router.patch("/{booking_id}", response_model=BookingResponse)
