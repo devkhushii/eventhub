@@ -31,16 +31,22 @@ const CreateReviewScreen = ({ navigation, route }) => {
     }
 
     setLoading(true);
+    console.log('[Review] Submitting review');
     try {
-      await reviewsApi.createReview({
+      const payload = {
         listing_id: listingId,
         rating: parseInt(rating),
         comment: comment.trim(),
-      });
+      };
+      console.log('[Review] Payload:', JSON.stringify(payload));
+      await reviewsApi.createReview(payload);
+      
+      console.log('[Review] Create success');
       Alert.alert('Success', 'Review submitted successfully!', [
         { text: 'OK', onPress: () => navigation.goBack() }
       ]);
     } catch (error) {
+      console.log('[Review] Validation failed or API error:', error.response?.data || error.message);
       const message = error.response?.data?.detail || 'Failed to submit review';
       Alert.alert('Error', message);
     } finally {

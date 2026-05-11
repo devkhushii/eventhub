@@ -9,40 +9,37 @@ from app.modules.bookings.repository import BookingRepository
 from app.modules.bookings.models import BookingStatus
 from app.modules.listings.repository import ListingRepository
 from app.modules.vendors.repository import VendorRepository
+import logging
 
+logger = logging.getLogger(__name__)
 
 class ReviewService:
 
     @staticmethod
     def create_review(db: Session, user_id: UUID, data):
+        logger.info(f"[Review] Payload: {data}")
 
-        booking = BookingRepository.get_by_id(db, data.booking_id)
-
-        if not booking:
-            raise HTTPException(status_code=404, detail="Booking not found")
-
-        if booking.user_id != user_id:
-            raise HTTPException(status_code=403, detail="Not your booking")
-
-        if booking.status != BookingStatus.COMPLETED:
-            raise HTTPException(status_code=400, detail="Booking not completed")
-
-        existing = ReviewRepository.get_by_booking(db, data.booking_id)
-        if existing:
-            raise HTTPException(status_code=400, detail="Review already exists")
+        # Check if listing exists
+        listing = ListingRepository.get_by_id(db, data.listing_id)
+        if not listing:
+            logger.error("[Review] Validation failed: Listing not found")
+            raise HTTPException(status_code=404, detail="Listing not found")
 
         review = Review(
             user_id=user_id,
-            listing_id=booking.listing_id,
+            listing_id=data.listing_id,
             booking_id=data.booking_id,
             rating=data.rating,
             comment=data.comment
         )
 
         created_review = ReviewRepository.create(db, review)
+        logger.info(f"[Review] DB save success. Review ID: {created_review.id}")
 
         # Update vendor rating
-        ReviewService.update_vendor_rating(db, booking.listing_id)
+        ReviewService.update_vendor_rating(db, data.listing_id)
+        
+        logger.info(f"[Review] Create success for listing {data.listing_id}")
 
         return created_review
 

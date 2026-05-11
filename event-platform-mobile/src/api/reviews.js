@@ -17,8 +17,9 @@ export const createReview = async (reviewData) => {
     comment: comment?.trim() || null,
   };
 
-  console.log('[Reviews API] Creating review:', JSON.stringify(payload));
-  const response = await apiClient.post('/reviews', payload);
+  console.log('[Review] Payload:', JSON.stringify(payload));
+  // Add trailing slash to match FastAPI exactly and prevent 307 redirects
+  const response = await apiClient.post('/reviews/', payload);
   return response.data;
 };
 

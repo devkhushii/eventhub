@@ -7,7 +7,8 @@ from typing import Optional
 
 
 class ReviewCreate(BaseModel):
-    booking_id: UUID
+    listing_id: UUID
+    booking_id: Optional[UUID] = None
     rating: int = Field(..., ge=1, le=5)
     comment: Optional[str]
 
@@ -16,7 +17,7 @@ class ReviewResponse(BaseModel):
     id: UUID
     user_id: UUID
     listing_id: UUID
-    booking_id: UUID
+    booking_id: Optional[UUID] = None
     rating: int
     comment: Optional[str]
     created_at: datetime
