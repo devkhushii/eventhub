@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -25,6 +25,18 @@ const AppNavigator = () => {
   const { isAuthenticated, loading, user } = useAuth();
 
   console.log('[AppNavigator] Render — isAuthenticated:', isAuthenticated, 'loading:', loading, 'role:', user?.role);
+
+  // BUG FIX: NavigationContainer.onReady fires too early on cold start (during AuthNavigator)
+  // Re-flush the queue when the user is fully authenticated and MainTabNavigator is mounted.
+  useEffect(() => {
+    if (isAuthenticated) {
+      console.log('[AppNavigator] Authenticated state reached, flushing navigation queue...');
+      // Small delay to ensure Stack.Navigator has rendered the nested screens
+      setTimeout(() => {
+        onNavigationReady();
+      }, 100);
+    }
+  }, [isAuthenticated]);
 
   if (loading) {
     return (

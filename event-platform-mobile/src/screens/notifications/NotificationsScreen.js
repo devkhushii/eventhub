@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import * as notificationsApi from '../../api/notifications';
+import { openChat } from '../../utils/navigationService';
+import notifee from '@notifee/react-native';
 import LoadingScreen from '../../components/LoadingScreen';
 import EmptyState from '../../components/EmptyState';
 import colors from '../../styles/colors';
@@ -50,6 +52,60 @@ const NotificationsScreen = ({ navigation }) => {
   };
 
   const handleNotificationPress = async (notification) => {
+    console.log('[NotificationsScreen] Notification pressed:', JSON.stringify(notification));
+
+    const isChat = 
+      notification.type === 'CHAT' || 
+      notification.type === 'MESSAGE' ||
+      notification.notification_type === 'CHAT' || 
+      notification.data?.type === 'CHAT' ||
+      notification.data?.type === 'MESSAGE';
+
+    if (isChat) {
+      const chatId = 
+        notification.chat_id || 
+        notification.reference_id || 
+        notification.data?.chat_id || 
+        notification.payload?.chat_id;
+
+      const chatName = 
+        notification.chat_name || 
+        notification.sender_name || 
+        notification.title || 
+        notification.data?.chat_name || 
+        'Chat';
+      
+      console.log('[NotificationsScreen] Opening chat:', chatId, chatName);
+      console.log('[NotificationsScreen] Final chatId:', chatId);
+
+      if (chatId) {
+        // openChat handles queuing and retry defensively
+        openChat(chatId, chatName);
+
+        // Mark as read
+        if (!notification.is_read) {
+          try {
+            await notificationsApi.markAsRead(notification.id);
+            setNotifications(prev =>
+              prev.map(n => n.id === notification.id ? { ...n, is_read: true } : n)
+            );
+          } catch (error) {
+            console.error('[NotificationsScreen] Failed to mark as read:', error);
+          }
+        }
+
+        // Cancel local Android tray notification
+        try {
+          await notifee.cancelNotification(`chat_${chatId}`);
+        } catch (error) {
+          console.log('[NotificationsScreen] Cancel notifee error:', error);
+        }
+
+        return; // Exit so we don't trigger generic routing
+      }
+    }
+
+    // Generic fallback for non-chat notifications
     if (!notification.is_read) {
       try {
         await notificationsApi.markAsRead(notification.id);

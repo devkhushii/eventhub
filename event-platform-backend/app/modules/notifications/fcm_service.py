@@ -81,13 +81,18 @@ class FCMService:
         try:
             from firebase_admin import messaging
 
+            notification_kwargs = {
+                "channel_id": "default",
+                "title": title,
+                "body": message,
+            }
+
+            if data and data.get("type") in ["MESSAGE", "CHAT"] and data.get("chat_id"):
+                notification_kwargs["tag"] = f"chat_{data['chat_id']}"
+
             android_config = messaging.AndroidConfig(
                 priority="high",
-                notification=messaging.AndroidNotification(
-                    channel_id="default",
-                    title=title,
-                    body=message,
-                ),
+                notification=messaging.AndroidNotification(**notification_kwargs),
             )
 
             apns_config = messaging.ApnsConfig(

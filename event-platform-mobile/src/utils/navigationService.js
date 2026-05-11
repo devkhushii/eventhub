@@ -10,6 +10,22 @@ export const navigationRef = createNavigationContainerRef();
 // Queue for navigations attempted before the NavigationContainer is ready
 let pendingNavigations = [];
 
+// Track the currently active chat ID to prevent duplicate push notifications
+let activeChatId = null;
+
+// Track last navigation to prevent rapid duplicate pushes
+let lastNavTimestamp = 0;
+let lastNavRoute = null;
+let lastNavParams = null;
+
+export const setActiveChatId = (id) => {
+  console.log('[NavigationService] Setting activeChatId:', id);
+  activeChatId = id;
+};
+
+export const getActiveChatId = () => activeChatId;
+
+
 /**
  * Check if NavigationContainer is mounted and ready.
  */
@@ -40,24 +56,66 @@ export const onNavigationReady = () => {
 /**
  * Navigate to a screen. If navigation is not ready, queue it.
  */
-export const navigate = (route, params = {}) => {
-  console.log('[NavigationService] navigate() called');
+export const navigate = (route, params = {}, retryCount = 0) => {
+  console.log(`[NavigationService] navigate() called (retry: ${retryCount})`);
   console.log('[NavigationService]   route:', route);
   console.log('[NavigationService]   params:', JSON.stringify(params));
   console.log('[NavigationService]   isReady:', navigationRef.isReady());
 
   if (navigationRef.isReady()) {
+    // Prevent rapid duplicate navigations (within 500ms)
+    const now = Date.now();
+    if (
+      now - lastNavTimestamp < 500 &&
+      lastNavRoute === route &&
+      JSON.stringify(lastNavParams) === JSON.stringify(params)
+    ) {
+      console.log('[NavigationService] 🚫 Ignoring rapid duplicate navigation to:', route);
+      return false;
+    }
+
     try {
       navigationRef.navigate(route, params);
       console.log('[NavigationService] ✅ Navigation SUCCESS to', route);
+      
+      lastNavTimestamp = now;
+      lastNavRoute = route;
+      lastNavParams = params;
+      
       return true;
     } catch (error) {
       console.log('[NavigationService] ❌ Navigation ERROR:', error.message);
+      
+      // If navigation fails because the route isn't available yet (e.g. still in AuthNavigator),
+      // we retry up to 3 times with a 500ms delay.
+      if (retryCount < 3) {
+        console.log(`[NavigationService] ⏳ Retrying navigation to ${route} in 500ms...`);
+        setTimeout(() => {
+          navigate(route, params, retryCount + 1);
+        }, 500);
+      } else {
+        console.log(`[NavigationService] 🚫 Max retries reached for ${route}. Pushing back to queue.`);
+        // Re-add to queue if max retries hit so it can be flushed on next state change
+        const isDuplicate = pendingNavigations.some(
+          nav => nav.route === route && JSON.stringify(nav.params) === JSON.stringify(params)
+        );
+        if (!isDuplicate) {
+          pendingNavigations.push({ route, params });
+        }
+      }
       return false;
     }
   } else {
     console.log('[NavigationService] ⏳ Navigation NOT ready, queuing:', route);
-    pendingNavigations.push({ route, params });
+    // Deduplicate: avoid pushing same chat screen multiple times
+    const isDuplicate = pendingNavigations.some(
+      nav => nav.route === route && JSON.stringify(nav.params) === JSON.stringify(params)
+    );
+    if (!isDuplicate) {
+      pendingNavigations.push({ route, params });
+    } else {
+      console.log('[NavigationService] 🚫 Ignoring duplicate pending navigation');
+    }
     return false;
   }
 };
@@ -112,4 +170,6 @@ export default {
   openChat,
   goBack,
   resetToHome,
+  setActiveChatId,
+  getActiveChatId,
 };

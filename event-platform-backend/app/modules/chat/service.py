@@ -35,6 +35,7 @@ def _create_notification(
     title: str,
     message: str,
     reference_id: UUID = None,
+    sender_id: UUID = None,
     sender_name: str = "User",
     message_preview: str = None,
 ):
@@ -49,6 +50,7 @@ def _create_notification(
                 await notification_trigger.notify_chat_message(
                     user_id=user_id,
                     chat_id=reference_id,
+                    sender_id=sender_id,
                     sender_name=sender_name,
                     message_preview=message_preview or message,
                 )
@@ -182,6 +184,7 @@ class ChatService:
                 title=f"New message from {sender_name}",
                 message=notify_message,
                 reference_id=chat_id,
+                sender_id=sender_id,
                 sender_name=sender_name,
                 message_preview=notify_message,
             )

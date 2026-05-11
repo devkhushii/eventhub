@@ -82,6 +82,7 @@ class NotificationTrigger:
         conversation_id: UUID = None,
         active_conversation_id: UUID = None,
         chat_name: str = None,
+        sender_id: UUID = None,
     ):
         """Send notification via all available channels.
 
@@ -159,6 +160,8 @@ class NotificationTrigger:
                         push_data["chat_id"] = str(conversation_id)
                     if notification_type == "MESSAGE" and chat_name:
                         push_data["chat_name"] = chat_name
+                    if notification_type == "MESSAGE" and sender_id:
+                        push_data["sender_id"] = str(sender_id)
 
                     await self.push_service.send_notification(
                         user_id=user_id,
@@ -229,6 +232,7 @@ class NotificationTrigger:
         self,
         user_id: UUID,
         chat_id: UUID,
+        sender_id: UUID,
         sender_name: str,
         message_preview: str,
         active_conversation_id: UUID = None,
@@ -238,6 +242,7 @@ class NotificationTrigger:
         Args:
             user_id: The user to notify
             chat_id: The chat/conversation ID
+            sender_id: ID of the message sender
             sender_name: Name of the message sender
             message_preview: Preview of the message
             active_conversation_id: The conversation the user currently has open (if any)
@@ -253,6 +258,7 @@ class NotificationTrigger:
             conversation_id=chat_id,
             active_conversation_id=active_conversation_id,
             chat_name=sender_name,
+            sender_id=sender_id,
         )
 
     async def notify_vendor_approved(self, user_id: UUID, business_name: str):

@@ -7,10 +7,12 @@ import {
   TouchableOpacity,
   RefreshControl,
   AppState,
+  DeviceEventEmitter,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import * as chatApi from '../../api/chat';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNotifications } from '../../contexts/NotificationContext';
 import wsService from '../../utils/websocket';
 import LoadingScreen from '../../components/LoadingScreen';
 import EmptyState from '../../components/EmptyState';
@@ -19,6 +21,7 @@ import { getInitials } from '../../utils/helpers';
 
 const ChatListScreen = ({ navigation }) => {
   const { user } = useAuth();
+  const { setChatUnreadCount } = useNotifications();
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -75,6 +78,10 @@ const ChatListScreen = ({ navigation }) => {
       uniqueChats = sortChatsByLatest(uniqueChats);
 
       console.log('[ChatList] Final merged/sorted chat count:', uniqueChats.length);
+
+      // Calculate total unread count across all chats
+      const totalUnread = uniqueChats.reduce((sum, chat) => sum + (chat.unread_count || 0), 0);
+      setChatUnreadCount(totalUnread);
 
       if (isMountedRef.current) {
         setChats(uniqueChats);
@@ -173,6 +180,22 @@ const ChatListScreen = ({ navigation }) => {
         wsListenerRef.current = null;
         console.log('[ChatList] WebSocket notification listener removed');
       }
+    };
+  }, [fetchChats]);
+
+  // ========================================
+  // Chat Read listener (triggered by ChatDetailScreen)
+  // ========================================
+  useEffect(() => {
+    console.log('[ChatList] Setting up chat_read listener');
+    const subscription = DeviceEventEmitter.addListener('chat_read', (chatId) => {
+      console.log('[ChatList] chat_read event received for chat:', chatId);
+      fetchChats();
+    });
+
+    return () => {
+      console.log('[ChatList] Removing chat_read listener');
+      subscription.remove();
     };
   }, [fetchChats]);
 

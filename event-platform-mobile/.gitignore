@@ -42,3 +42,5 @@ yarn-error.*
 
 
 google-services.json
+
+package-lock.json

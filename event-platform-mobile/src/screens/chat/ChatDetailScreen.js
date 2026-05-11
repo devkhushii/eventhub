@@ -9,20 +9,25 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  DeviceEventEmitter,
 } from 'react-native';
+import notifee from '@notifee/react-native';
 import { useRoute, useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as chatApi from '../../api/chat';
 import wsService from '../../utils/websocket';
+import { setActiveChatId } from '../../utils/navigationService';
 import LoadingScreen from '../../components/LoadingScreen';
 import EmptyState from '../../components/EmptyState';
 import colors, { borderRadius } from '../../styles/colors';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNotifications } from '../../contexts/NotificationContext';
 
 const ChatDetailScreen = () => {
   const route = useRoute();
   const navigation = useNavigation();
   const { chatId, chatName, fromNotification } = route.params || {};
   const { user } = useAuth();
+  const { decrementChatUnreadCount } = useNotifications();
   
   console.log('[Chat] ChatDetailScreen rendered');
   console.log('[Chat]   chatId:', chatId);
@@ -60,20 +65,32 @@ const ChatDetailScreen = () => {
 
       console.log('[Chat] Screen focused — marking as read and setting active conversation');
       
+      // Instantly decrement global unread count for snappy UI
+      decrementChatUnreadCount(1);
+      
       // Mark messages as read
       chatApi.markChatAsRead(chatId).then((result) => {
         console.log('[Chat] markChatAsRead result:', JSON.stringify(result));
+        // Inform other screens that chat has been read
+        DeviceEventEmitter.emit('chat_read', chatId);
       }).catch((error) => {
         console.log('[Chat] markChatAsRead error:', error.message);
       });
 
+      // Clear specific notification from status bar
+      notifee.cancelNotification(`chat_${chatId}`).then(() => {
+        console.log('[Chat] Local notification cleared for chat:', chatId);
+      }).catch(err => console.log('[Chat] Failed to clear local notification:', err));
+
       // Tell the WS service which conversation is active
       // This info is used to suppress duplicate push notifications
       wsService.setActiveConversation(chatId);
+      setActiveChatId(chatId);
 
       return () => {
         console.log('[Chat] Screen unfocused — clearing active conversation');
         wsService.setActiveConversation(null);
+        setActiveChatId(null);
       };
     }, [chatId])
   );

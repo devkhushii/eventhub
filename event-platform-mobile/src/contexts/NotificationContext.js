@@ -5,7 +5,8 @@ import * as notificationsApi from '../api/notifications';
 import * as vendorsApi from '../api/vendors';
 import { useAuth } from './AuthContext';
 import wsService from '../utils/websocket';
-import { openChat } from '../utils/navigationService';
+import notifee, { AndroidImportance, EventType } from '@notifee/react-native';
+import { openChat, getActiveChatId } from '../utils/navigationService';
 
 const POLLING_INTERVAL = 30000;
 const MAX_TOKEN_RETRIES = 3;
@@ -19,6 +20,7 @@ export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [permissionStatus, setPermissionStatus] = useState(null);
   const [fcmToken, setFcmToken] = useState(null);
   const [isRealtimeAvailable, setIsRealtimeAvailable] = useState(false);
@@ -136,17 +138,13 @@ export const NotificationProvider = ({ children }) => {
 
     console.log('[NotifTap] Parsed → type:', notificationType, '| chatId:', chatId, '| chatName:', chatName);
 
-    if (notificationType === 'MESSAGE' && chatId) {
-      console.log('[NotifTap] ✅ Navigating to ChatDetail...');
-      // For cold start: nav container may not be mounted yet.
-      // openChat queues it if not ready, onReady will flush it.
-      // Add a small delay for cold start to let auth resolve first.
-      const delay = source === 'getInitialNotification' ? 1500 : 300;
-      console.log('[NotifTap] Using delay:', delay, 'ms');
-      setTimeout(() => {
-        console.log('[NotifTap] Executing openChat now');
+    if ((notificationType === 'MESSAGE' || notificationType === 'CHAT') && chatId) {
+      console.log('[NotifTap] ✅ Valid Chat Notification detected. Calling openChat()...');
+      try {
         openChat(chatId, chatName);
-      }, delay);
+      } catch (error) {
+        console.log('[NotifTap] ❌ Error executing openChat:', error);
+      }
     } else {
       console.log('[NotifTap] Not a MESSAGE notification or no chatId');
     }
@@ -173,7 +171,56 @@ export const NotificationProvider = ({ children }) => {
       console.log('[NotifCtx] 📩 Foreground message received');
       console.log('[NotifCtx] Title:', remoteMessage.notification?.title);
       console.log('[NotifCtx] Data:', JSON.stringify(remoteMessage.data));
-      // Don't navigate — user is in the app. WS/polling handles updates.
+      
+      const data = remoteMessage.data || {};
+      const chatId = data.chat_id;
+      
+      // Check if user is actively viewing this exact chat
+      if (chatId && getActiveChatId() === String(chatId)) {
+        console.log('[NotifCtx] 🚫 Skipping local notification — user is currently viewing this chat');
+        return;
+      }
+
+      // Display local notification via Notifee
+      try {
+        const channelId = await notifee.createChannel({
+          id: 'chat_messages',
+          name: 'Chat Messages',
+          importance: AndroidImportance.HIGH,
+        });
+
+        await notifee.displayNotification({
+          title: remoteMessage.notification?.title || data.chat_name || 'New Message',
+          body: remoteMessage.notification?.body || 'You have a new message',
+          data: data,
+          id: `chat_${chatId}`, // Ensures WhatsApp-like replacement for the same chat
+          android: {
+            channelId,
+            groupId: `chat_${chatId}`,
+            pressAction: {
+              id: 'default',
+            },
+          },
+        });
+        console.log('[NotifCtx] ✅ Local foreground notification displayed');
+      } catch (err) {
+        console.log('[NotifCtx] ❌ Failed to display local notification:', err);
+      }
+    });
+
+    // 1b. NOTIFEE FOREGROUND TAP
+    const unsubscribeNotifee = notifee.onForegroundEvent(({ type, detail }) => {
+      if (type === EventType.PRESS && detail.notification) {
+        console.log('[NotifTap] 📲 Notifee Foreground Notification Tapped');
+        // Construct a pseudo remoteMessage to reuse our handleNotificationTap
+        handleNotificationTap({
+          data: detail.notification.data,
+          notification: {
+            title: detail.notification.title,
+            body: detail.notification.body,
+          }
+        }, 'notifee_foreground');
+      }
     });
 
     // 2. BACKGROUND TAP: user taps notification while app was in background
@@ -193,24 +240,43 @@ export const NotificationProvider = ({ children }) => {
     fcmUnsubscribeRef.current = () => {
       console.log('[NotifCtx] Cleaning up FCM handlers');
       unsubscribeForeground();
+      unsubscribeNotifee();
       unsubscribeOpenedApp();
       unsubscribeTokenRefresh();
       handlersRegisteredRef.current = false;
     };
 
-    // 4. COLD START: app was killed, user taps notification to open it
+    // 4. COLD START (FCM): app was killed, user taps notification to open it
     messaging().getInitialNotification().then((remoteMessage) => {
       if (remoteMessage) {
-        console.log('[NotifTap] 🧊 getInitialNotification — COLD START notification tap');
+        console.log('[NotifTap] 🧊 FCM getInitialNotification — COLD START notification tap');
         handleNotificationTap(remoteMessage, 'getInitialNotification');
       } else {
-        console.log('[NotifCtx] getInitialNotification — normal app launch (no notification)');
+        console.log('[NotifCtx] getInitialNotification (FCM) — normal app launch (no notification)');
       }
     }).catch((error) => {
       console.log('[NotifCtx] getInitialNotification error:', error.message);
     });
 
-    console.log('[NotifCtx] ✅ All FCM handlers registered');
+    // 5. COLD START (Notifee): app was killed, user taps a local Notifee notification
+    notifee.getInitialNotification().then((initialNotification) => {
+      if (initialNotification && initialNotification.notification) {
+        console.log('[NotifTap] 🧊 Notifee getInitialNotification — COLD START notification tap');
+        handleNotificationTap({
+          data: initialNotification.notification.data,
+          notification: {
+            title: initialNotification.notification.title,
+            body: initialNotification.notification.body,
+          }
+        }, 'notifee_getInitialNotification');
+      } else {
+        console.log('[NotifCtx] getInitialNotification (Notifee) — normal app launch');
+      }
+    }).catch((error) => {
+      console.log('[NotifCtx] Notifee getInitialNotification error:', error.message);
+    });
+
+    console.log('[NotifCtx] ✅ All FCM & Notifee handlers registered');
   }, [registerToken, handleNotificationTap]);
 
   // ========================================
@@ -355,6 +421,7 @@ export const NotificationProvider = ({ children }) => {
       setNotifications([]);
       setUnreadCount(0);
       setPendingCount(0);
+      setChatUnreadCount(0);
       setFcmToken(null);
       setIsRealtimeAvailable(false);
     }
@@ -391,10 +458,17 @@ export const NotificationProvider = ({ children }) => {
     };
   }, []);
 
+  const decrementChatUnreadCount = useCallback((amount = 1) => {
+    setChatUnreadCount(prev => Math.max(0, prev - amount));
+  }, []);
+
   const value = {
     notifications,
     unreadCount: unreadCount + pendingCount,
     pendingCount,
+    chatUnreadCount,
+    setChatUnreadCount,
+    decrementChatUnreadCount,
     permissionStatus,
     fcmToken,
     isRealtimeAvailable,

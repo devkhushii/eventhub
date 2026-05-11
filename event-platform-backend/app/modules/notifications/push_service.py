@@ -123,7 +123,7 @@ class PushNotificationService:
         )
 
     async def send_chat_notification(
-        self, user_id: UUID, chat_id: UUID, sender_name: str, message_preview: str
+        self, user_id: UUID, chat_id: UUID, sender_id: UUID, sender_name: str, message_preview: str
     ):
         """Send new chat message notification with proper data payload."""
         await self.send_notification(
@@ -131,8 +131,11 @@ class PushNotificationService:
             title=f"New message from {sender_name}",
             body=message_preview[:100] if message_preview else "New message",
             data={
-                "type": "MESSAGE",
+                "type": "CHAT",
                 "chat_id": str(chat_id),
+                "chat_name": sender_name,
+                "sender_id": str(sender_id),
+                "sender_name": sender_name,
                 "click_action": "OPEN_CHAT",
             },
         )

@@ -7,6 +7,7 @@ import * as notificationsApi from '../api/notifications';
 
 import HomeScreen from '../screens/home/HomeScreen';
 import ChatListScreen from '../screens/chat/ChatListScreen';
+import { useNotifications } from '../contexts/NotificationContext';
 
 import ProfileScreen from '../screens/profile/ProfileScreen';
 import VendorDashboardScreen from '../screens/vendor/VendorDashboardScreen';
@@ -28,8 +29,15 @@ import colors from '../styles/colors';
 const Tab = createBottomTabNavigator();
 const ProfileStack = createNativeStackNavigator();
 
-const TabIcon = ({ name, focused }) => (
-  <Text style={[styles.icon, focused && styles.iconFocused]}>{name}</Text>
+const TabIcon = ({ name, focused, count }) => (
+  <View>
+    <Text style={[styles.icon, focused && styles.iconFocused]}>{name}</Text>
+    {count > 0 && (
+      <View style={styles.badge}>
+        <Text style={styles.badgeText}>{count > 99 ? '99+' : count}</Text>
+      </View>
+    )}
+  </View>
 );
 
 const ProfileStackNavigator = () => {
@@ -111,6 +119,8 @@ const ProfileStackNavigator = () => {
 };
 
 const MainTabNavigator = () => {
+  const { chatUnreadCount } = useNotifications();
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -133,7 +143,7 @@ const MainTabNavigator = () => {
         name="Messages"
         component={ChatListScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon name="💬" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="💬" focused={focused} count={chatUnreadCount} />,
           tabBarLabel: 'Messages',
         }}
       />
@@ -168,6 +178,23 @@ const styles = StyleSheet.create({
   },
   iconFocused: {
     transform: [{ scale: 1.1 }],
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    backgroundColor: colors.error,
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
 });
 
