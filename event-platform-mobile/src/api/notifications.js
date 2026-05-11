@@ -1,9 +1,37 @@
 import apiClient from '../utils/apiClient';
+import { Platform } from 'react-native';
 
 export const registerExpoToken = async (expoPushToken) => {
   console.log('[Notifications API] Registering Expo token...');
   const response = await apiClient.post('/notifications/register-token', {
     expo_push_token: expoPushToken,
+  });
+  return response.data;
+};
+
+export const registerDeviceToken = async (token, deviceId = null) => {
+  console.log('[Notifications API] Registering FCM device token...');
+  const platform = Platform.OS === 'ios' ? 'IOS' : 'ANDROID';
+  const response = await apiClient.post('/notifications/device-token', {
+    token,
+    platform,
+    device_id: deviceId,
+  });
+  return response.data;
+};
+
+export const unregisterDeviceToken = async (token) => {
+  console.log('[Notifications API] Unregistering device token...');
+  const response = await apiClient.delete('/notifications/device-token', {
+    params: { token },
+  });
+  return response.data;
+};
+
+export const refreshDeviceToken = async (oldToken, newToken) => {
+  console.log('[Notifications API] Refreshing device token...');
+  const response = await apiClient.put('/notifications/device-token/refresh', null, {
+    params: { old_token: oldToken, new_token: newToken },
   });
   return response.data;
 };

@@ -4,6 +4,7 @@ import { Alert } from 'react-native';
 import * as authApi from '../api/auth';
 import { STORAGE_KEYS } from '../utils/constants';
 import { setLogoutCallback, clearAuthToken } from '../utils/apiClient';
+import wsService from '../utils/websocket';
 
 const AUTH_TIMEOUT_MS = 3000;
 
@@ -97,7 +98,13 @@ export const AuthProvider = ({ children }) => {
       console.log('[Auth] Logging in...');
       const data = await authApi.login({ email, password });
       console.log('[Auth] Login successful');
-      console.log("USER:", data.user);
+      
+      // Runtime Logs requested by user
+      console.log('--- [AUTH STATE DEBUG] ---');
+      console.log('1. User ID:', data.user?.id);
+      console.log('2. User Role:', data.user?.role);
+      console.log('3. Access Token length:', data.access_token?.length);
+      console.log('--------------------------');
       
       setUser(data.user);
       setIsAuthenticated(true);
@@ -128,16 +135,38 @@ export const AuthProvider = ({ children }) => {
 
   const handleLogout = useCallback(async () => {
     try {
-      console.log('[Auth] Logging out...');
+      console.log('[AuthCleanup] ========== LOGOUT START ==========');
+      
+      // 1. Disconnect WebSocket connections FIRST (before clearing tokens)
+      try {
+        console.log('[AuthCleanup] Disconnecting chat WebSocket...');
+        wsService.disconnect();              // Closes chat WS + clears reconnect timer
+        console.log('[AuthCleanup] Disconnecting notification WebSocket...');
+        wsService.disconnectNotifications(); // Closes notification WS
+        console.log('[AuthCleanup] Clearing all WS listeners...');
+        wsService.listeners.clear();         // Remove ALL listeners
+        wsService.clearMessageIds();         // Clear dedup cache
+        console.log('[AuthCleanup] ✅ WebSocket cleanup complete');
+      } catch (wsError) {
+        console.log('[AuthCleanup] WS cleanup error (non-fatal):', wsError.message);
+      }
+      
+      // 2. Clear auth tokens
+      console.log('[AuthCleanup] Clearing stored tokens...');
       await AsyncStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
       await AsyncStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
       await AsyncStorage.removeItem(STORAGE_KEYS.USER);
       clearAuthToken();
+      
+      // 3. Clear state — triggers NotificationContext cleanup via isAuthenticated=false
       setUser(null);
       setIsAuthenticated(false);
-      console.log('[Auth] Logout complete');
+      console.log('[AuthCleanup] ========== LOGOUT COMPLETE ==========');
     } catch (error) {
-      console.error('[Auth] Logout error:', error);
+      console.error('[AuthCleanup] Logout error:', error);
+      // Still clear auth state even if cleanup errors
+      setUser(null);
+      setIsAuthenticated(false);
     }
   }, []);
 

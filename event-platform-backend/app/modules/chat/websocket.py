@@ -20,35 +20,86 @@ class ConnectionManager:
     def __init__(self):
         # conversation_id -> set of WebSocket connections
         self.active_connections: Dict[str, Set[WebSocket]] = {}
+        # user_id -> set of conversation_ids they're in (for presence)
+        self.user_conversations: Dict[str, Set[str]] = {}
 
-    async def connect(self, websocket: WebSocket, conversation_id: str):
+    async def connect(
+        self, websocket: WebSocket, conversation_id: str, user_id: str = None
+    ):
         await websocket.accept()
         if conversation_id not in self.active_connections:
             self.active_connections[conversation_id] = set()
         self.active_connections[conversation_id].add(websocket)
-        logger.info(f"WebSocket connected to conversation {conversation_id}")
 
-    def disconnect(self, websocket: WebSocket, conversation_id: str):
+        if user_id:
+            if user_id not in self.user_conversations:
+                self.user_conversations[user_id] = set()
+            self.user_conversations[user_id].add(conversation_id)
+
+        logger.info(
+            f"[WebSocket] CONNECT: user={user_id} conv={conversation_id} "
+            f"active_count={len(self.active_connections.get(conversation_id, []))}"
+        )
+
+    def disconnect(
+        self, websocket: WebSocket, conversation_id: str, user_id: str = None
+    ):
         if conversation_id in self.active_connections:
             self.active_connections[conversation_id].discard(websocket)
             if not self.active_connections[conversation_id]:
                 del self.active_connections[conversation_id]
-        logger.info(f"WebSocket disconnected from conversation {conversation_id}")
+
+        if user_id and user_id in self.user_conversations:
+            self.user_conversations[user_id].discard(conversation_id)
+            if not self.user_conversations[user_id]:
+                del self.user_conversations[user_id]
+
+        logger.info(
+            f"[WebSocket] DISCONNECT: user={user_id} conv={conversation_id} "
+            f"remaining={len(self.active_connections.get(conversation_id, []))}"
+        )
 
     async def broadcast(self, conversation_id: str, message: dict):
         """Broadcast message to all users in a conversation."""
+        logger.info(f"[WebSocket] Broadcasting to conversation {conversation_id}")
+        logger.info(
+            f"[WebSocket] Active connections: {len(self.active_connections.get(conversation_id, []))}"
+        )
+        logger.info(f"[WebSocket] Broadcast payload: {message}")
+
         if conversation_id in self.active_connections:
             disconnected = set()
             for connection in self.active_connections[conversation_id]:
                 try:
                     await connection.send_json(message)
+                    logger.info(
+                        f"[WebSocket] Successfully sent to connection in {conversation_id}"
+                    )
                 except Exception as e:
-                    logger.error(f"Failed to send message: {e}")
+                    logger.error(f"[WebSocket] Failed to send message: {e}")
                     disconnected.add(connection)
 
-            # Clean up disconnected clients
             for conn in disconnected:
                 self.active_connections[conversation_id].discard(conn)
+        else:
+            logger.warning(
+                f"[WebSocket] No active connections for conversation {conversation_id}"
+            )
+
+    def is_user_online(self, user_id: str) -> bool:
+        """Check if a user is currently online in any conversation."""
+        return user_id in self.user_conversations
+
+    def get_online_users(self, conversation_id: str) -> List[str]:
+        """Get list of online users in a conversation."""
+        if conversation_id not in self.active_connections:
+            return []
+
+        online = []
+        for user_id, convs in self.user_conversations.items():
+            if conversation_id in convs:
+                online.append(user_id)
+        return online
 
 
 # Global connection manager
@@ -157,7 +208,7 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
             return
 
         # Connect to conversation
-        await manager.connect(websocket, conversation_id)
+        await manager.connect(websocket, conversation_id, user.id)
 
         try:
             while True:
@@ -174,7 +225,6 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
                 message_type = message_data.get("type")
 
                 if message_type == "chat_message":
-                    # Save message to database
                     from app.modules.chat.service import ChatService
 
                     content = message_data.get("content", "").strip()
@@ -182,12 +232,18 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
                         await websocket.send_json({"error": "Message cannot be empty"})
                         continue
 
-                    # Create message
+                    logger.info(
+                        f"[WebSocket] Creating message in conversation {conversation_id} by user {user.id}"
+                    )
+
                     message = ChatService.send_message(
                         db, conversation_uuid, user.id, content
                     )
 
-                    # Broadcast to all users in conversation
+                    logger.info(
+                        f"[WebSocket] Message saved with ID: {message.id}, created_at: {message.created_at}"
+                    )
+
                     broadcast_data = {
                         "type": "new_message",
                         "conversation_id": conversation_id,
@@ -198,9 +254,15 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
                             "created_at": message.created_at.isoformat()
                             if message.created_at
                             else None,
+                            "is_read": message.is_read,
                         },
                     }
+
+                    logger.info(f"[WebSocket] About to broadcast: {broadcast_data}")
                     await manager.broadcast(conversation_id, broadcast_data)
+                    logger.info(
+                        f"[WebSocket] Broadcast completed for message {message.id}"
+                    )
 
                 elif message_type == "ping":
                     await websocket.send_json(
@@ -211,14 +273,13 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
                     await websocket.send_json({"error": "Unknown message type"})
 
         except WebSocketDisconnect:
-            manager.disconnect(websocket, conversation_id)
+            manager.disconnect(websocket, conversation_id, user.id)
             logger.info(
                 f"WebSocket disconnected: user {user.id}, conversation {conversation_id}"
             )
         except Exception as e:
             logger.error(f"WebSocket error: {e}")
-            manager.disconnect(websocket, conversation_id)
+            manager.disconnect(websocket, conversation_id, user.id)
 
     finally:
         db.close()
-

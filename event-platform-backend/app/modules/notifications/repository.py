@@ -3,9 +3,15 @@
 import logging
 from typing import Optional, List
 from uuid import UUID
+from datetime import datetime, timezone
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
-from app.modules.notifications.models import Notification, NotificationType
+from app.modules.notifications.models import (
+    Notification,
+    NotificationType,
+    DeviceToken,
+    DevicePlatform,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,4 +96,100 @@ class NotificationRepository:
         logger.info(
             f"Marked {result.rowcount} notifications as read for user {user_id}"
         )
+        return result.rowcount
+
+
+class DeviceTokenRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_active_tokens_by_user(self, user_id: UUID) -> List[DeviceToken]:
+        query = (
+            select(DeviceToken)
+            .where(DeviceToken.user_id == user_id)
+            .where(DeviceToken.is_active == True)
+        )
+        result = self.db.execute(query)
+        return list(result.scalars().all())
+
+    def get_token_by_value(self, token: str) -> Optional[DeviceToken]:
+        query = select(DeviceToken).where(DeviceToken.token == token)
+        result = self.db.execute(query)
+        return result.scalar_one_or_none()
+
+    def create_or_update_token(
+        self,
+        user_id: UUID,
+        token: str,
+        platform: DevicePlatform = DevicePlatform.ANDROID,
+        device_id: str = None,
+        app_version: str = None,
+    ) -> DeviceToken:
+        existing = self.get_token_by_value(token)
+
+        if existing:
+            existing.last_used_at = datetime.now(timezone.utc)
+            existing.is_active = True
+            if device_id:
+                existing.device_id = device_id
+            if app_version:
+                existing.app_version = app_version
+            self.db.commit()
+            self.db.refresh(existing)
+            logger.info(f"Updated device token {existing.id}")
+            return existing
+
+        new_token = DeviceToken(
+            user_id=user_id,
+            token=token,
+            platform=platform,
+            device_id=device_id,
+            app_version=app_version,
+        )
+        self.db.add(new_token)
+        self.db.commit()
+        self.db.refresh(new_token)
+        logger.info(f"Created device token {new_token.id}")
+        return new_token
+
+    def deactivate_token(self, token: str) -> bool:
+        existing = self.get_token_by_value(token)
+        if existing:
+            existing.is_active = False
+            self.db.commit()
+            logger.info(f"Deactivated token {existing.id}")
+            return True
+        return False
+
+    def deactivate_all_user_tokens(self, user_id: UUID) -> int:
+        query = (
+            DeviceToken.__table__.update()
+            .where(DeviceToken.user_id == user_id)
+            .where(DeviceToken.is_active == True)
+            .values(is_active=False)
+        )
+        result = self.db.execute(query)
+        self.db.commit()
+        logger.info(f"Deactivated {result.rowcount} tokens for user {user_id}")
+        return result.rowcount
+
+    def cleanup_old_tokens(self, user_id: UUID, keep_recent: int = 5) -> int:
+        subquery = (
+            select(DeviceToken.id)
+            .where(DeviceToken.user_id == user_id)
+            .where(DeviceToken.is_active == True)
+            .order_by(DeviceToken.last_used_at.desc())
+            .limit(keep_recent)
+        )
+        query = (
+            DeviceToken.__table__.update()
+            .where(DeviceToken.user_id == user_id)
+            .where(DeviceToken.is_active == True)
+            .where(~DeviceToken.id.in_(subquery))
+            .values(is_active=False)
+        )
+        result = self.db.execute(query)
+        self.db.commit()
+        if result.rowcount > 0:
+            logger.info(f"Cleaned up {result.rowcount} old tokens")
         return result.rowcount

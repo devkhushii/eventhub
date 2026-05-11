@@ -33,10 +33,22 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class UserResponse(BaseModel):
+    id: UUID
+    email: EmailStr
+    full_name: str
+    role: Optional[str] = "CUSTOMER"
+    is_verified: bool
+
+    class Config:
+        from_attributes = True
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    user: Optional[UserResponse] = None
 
 
 class RefreshRequest(BaseModel):
@@ -63,12 +75,4 @@ class PasswordResetConfirm(BaseModel):
         return v
 
 
-class UserResponse(BaseModel):
-    id: UUID
-    email: EmailStr
-    full_name: str
-    role: Optional[str] = "CUSTOMER"
-    is_verified: bool
 
-    class Config:
-        from_attributes = True

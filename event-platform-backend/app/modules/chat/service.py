@@ -39,33 +39,35 @@ def _create_notification(
     message_preview: str = None,
 ):
     """Helper to create notification from chat service."""
-    try:
-        from app.modules.notifications.trigger import notification_trigger
-        import asyncio
 
-        if notification_type == "MESSAGE":
-            asyncio.create_task(
-                notification_trigger.notify_chat_message(
+    def _notify_async():
+        import asyncio
+        from app.modules.notifications.trigger import notification_trigger
+
+        async def _notify():
+            if notification_type == "MESSAGE":
+                await notification_trigger.notify_chat_message(
                     user_id=user_id,
                     chat_id=reference_id,
                     sender_name=sender_name,
                     message_preview=message_preview or message,
                 )
-            )
-            logger.info(
-                f"Chat notification triggered for user {user_id}: {sender_name}"
-            )
-        else:
-            asyncio.create_task(
-                notification_trigger.send(
+            else:
+                await notification_trigger.send(
                     user_id=user_id,
                     notification_type=notification_type,
                     title=title,
                     message=message,
                     reference_id=reference_id,
                 )
-            )
-            logger.info(f"Notification triggered for user {user_id}: {title}")
+
+        asyncio.run(_notify())
+
+    try:
+        import threading
+
+        threading.Thread(target=_notify_async, daemon=True).start()
+        logger.info(f"Notification triggered for user {user_id}: {title}")
     except Exception as e:
         logger.error(f"Failed to create notification: {e}")
 
@@ -221,7 +223,20 @@ class ChatService:
         last_message = ChatRepository.get_last_message(db, chat.id)
         unread_count = ChatRepository.get_unread_count(db, chat.id, current_user_id)
 
+        if last_message:
+            return {
+                "last_message": {
+                    "id": last_message.id,
+                    "content": last_message.content,
+                    "sender_id": last_message.sender_id,
+                    "created_at": last_message.created_at,
+                    "is_read": last_message.is_read,
+                },
+                "last_message_text": last_message.content,
+                "unread_count": unread_count,
+            }
         return {
-            "last_message": last_message.content if last_message else None,
+            "last_message": None,
+            "last_message_text": None,
             "unread_count": unread_count,
         }

@@ -196,3 +196,104 @@ def mark_all_as_read(
     except Exception as e:
         logger.error(f"Error marking all as read: {e}")
         raise HTTPException(status_code=500, detail="Failed to mark all as read")
+
+
+@router.post("/device-token", response_model=dict)
+def register_device_token(
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Register or update device push token."""
+    logger.info(f"POST /notifications/device-token - user: {current_user.id}")
+
+    try:
+        from app.modules.notifications.repository import DeviceTokenRepository
+        from app.modules.notifications.models import DevicePlatform
+
+        repo = DeviceTokenRepository(db)
+
+        platform = data.get("platform", "ANDROID")
+        try:
+            platform_enum = DevicePlatform(platform)
+        except ValueError:
+            platform_enum = DevicePlatform.ANDROID
+
+        token = repo.create_or_update_token(
+            user_id=current_user.id,
+            token=data["token"],
+            platform=platform_enum,
+            device_id=data.get("device_id"),
+            app_version=data.get("app_version"),
+        )
+
+        logger.info(f"Registered device token {token.id}")
+        return {"message": "Device token registered", "success": True}
+
+    except Exception as e:
+        logger.error(f"Error registering device token: {e}")
+        raise HTTPException(status_code=500, detail="Failed to register device token")
+
+
+@router.delete("/device-token", response_model=dict)
+def unregister_device_token(
+    token: str = Query(..., description="Device token to remove"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Deactivate a device push token."""
+    logger.info(f"DELETE /notifications/device-token - user: {current_user.id}")
+
+    try:
+        from app.modules.notifications.repository import DeviceTokenRepository
+
+        repo = DeviceTokenRepository(db)
+        deleted = repo.deactivate_token(token)
+
+        if deleted:
+            return {"message": "Device token deactivated", "success": True}
+        return {"message": "Token not found", "success": False}
+
+    except Exception as e:
+        logger.error(f"Error deactivating device token: {e}")
+        raise HTTPException(status_code=500, detail="Failed to deactivate device token")
+
+
+@router.put("/device-token/refresh", response_model=dict)
+def refresh_device_token(
+    old_token: str = Query(..., description="Old device token"),
+    new_token: str = Query(..., description="New device token"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Refresh device token (deactivate old, activate new)."""
+    logger.info(f"PUT /notifications/device-token/refresh - user: {current_user.id}")
+
+    try:
+        from app.modules.notifications.repository import DeviceTokenRepository
+
+        repo = DeviceTokenRepository(db)
+
+        old = repo.get_token_by_value(old_token)
+        if not old or old.user_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Old token not found")
+
+        new_token_obj = repo.create_or_update_token(
+            user_id=current_user.id,
+            token=new_token,
+            platform=old.platform,
+            device_id=old.device_id,
+            app_version=old.app_version,
+        )
+
+        old.is_active = False
+        db.commit()
+
+        logger.info(f"Refreshed device token {new_token_obj.id}")
+        return {"message": "Device token refreshed", "success": True}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error refreshing device token: {e}")
+        raise HTTPException(status_code=500, detail="Failed to refresh device token")

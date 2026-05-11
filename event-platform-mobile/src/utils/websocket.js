@@ -11,9 +11,31 @@ class WebSocketService {
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
     this.reconnectDelay = 3000;
+    this.reconnectTimer = null;       // BUG FIX: track reconnect timer
     this.currentChatId = null;
     this.isConnecting = false;
     this.messageIds = new Set();
+    this.appState = 'unknown';
+    this.activeConversationId = null;
+  }
+
+  setAppState(state) {
+    this.appState = state;
+    console.log('[WebSocket] App state changed to:', state);
+  }
+
+  setActiveConversation(conversationId) {
+    this.activeConversationId = conversationId;
+    console.log('[WebSocket] Active conversation set to:', conversationId);
+  }
+
+  getPresenceInfo() {
+    return {
+      isConnected: this.isConnected(),
+      appState: this.appState,
+      activeConversationId: this.activeConversationId,
+      currentChatId: this.currentChatId,
+    };
   }
 
   async getToken() {
@@ -82,12 +104,32 @@ class WebSocketService {
   }
 
   async connect(chatId) {
-    if (this.isConnecting || (this.ws && this.ws.readyState === WebSocket.OPEN && this.currentChatId === chatId)) {
-      console.log('[WebSocket] Already connected or connecting');
+    console.log('[WebSocket] connect() called for chatId:', chatId, 'currentChatId:', this.currentChatId);
+    
+    if (this.isConnecting) {
+      console.log('[WebSocket] Already connecting, waiting...');
+      return new Promise((resolve) => {
+        const checkInterval = setInterval(() => {
+          if (!this.isConnecting) {
+            clearInterval(checkInterval);
+            if (this.currentChatId === chatId && this.ws?.readyState === WebSocket.OPEN) {
+              resolve();
+            } else {
+              this.connect(chatId).then(resolve);
+            }
+          }
+        }, 100);
+      });
+    }
+
+    // Already connected to the same chat - great!
+    if (this.ws && this.ws.readyState === WebSocket.OPEN && this.currentChatId === chatId) {
+      console.log('[WebSocket] Already connected to this chat');
       return Promise.resolve();
     }
 
     this.isConnecting = true;
+    const previousChatId = this.currentChatId;
     this.currentChatId = chatId;
 
     try {
@@ -96,9 +138,16 @@ class WebSocketService {
         throw new Error('No authentication token');
       }
 
-      // Use dynamic WebSocket URL
+      // Close existing connection if switching chats (but gracefully)
+      if (this.ws && this.ws.readyState === WebSocket.OPEN && previousChatId !== chatId) {
+        console.log('[WebSocket] Switching from chat', previousChatId, 'to', chatId);
+        this.ws.close(1000, 'Switching chats');
+        this.ws = null;
+        // Wait a moment for clean disconnect
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
       const wsUrl = getWebSocketUrl(`/ws/chat/${chatId}`, `token=${token}`);
-      
       console.log('[WebSocket] Connecting to:', wsUrl.replace(token, '***'));
 
       this.ws = new WebSocket(wsUrl);
@@ -119,28 +168,38 @@ class WebSocketService {
         this.ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            console.log('[WebSocket] Received:', data);
-            
-            // Handle different message types
-            if (data.type === 'new_message' && data.message) {
-              const msg = data.message;
+            console.log('[WebSocket] Received raw:', JSON.stringify(data).slice(0, 500));
+
+            // Handle new_message type - support both payload.message and direct payload
+            if (data.type === 'new_message') {
+              // Handle the payload structure: { type: 'new_message', conversation_id: '...', message: { ... } }
+              const msg = data.message || data;
               
-              // Prevent duplicate messages using message ID
-              if (msg.id && this.messageIds.has(msg.id)) {
-                console.log('[WebSocket] Duplicate message, skipping:', msg.id);
+              console.log('[WebSocket] Processing message:', JSON.stringify(msg).slice(0, 200));
+              
+              // Create a normalized message ID
+              const msgId = msg?.id?.toString();
+              
+              if (msgId && this.messageIds.has(msgId)) {
+                console.log('[WebSocket] Duplicate message detected, skipping:', msgId);
+                this.notifyListeners('duplicate', msg);
                 return;
               }
               
-              if (msg.id) {
-                this.messageIds.add(msg.id);
+              if (msgId) {
+                this.messageIds.add(msgId);
+                console.log('[WebSocket] Added message ID to tracking:', msgId);
               }
               
-              // Clean up old message IDs (keep last 100)
+              // Clean up old message IDs to prevent memory leak
               if (this.messageIds.size > 100) {
                 const arr = Array.from(this.messageIds);
                 this.messageIds = new Set(arr.slice(-100));
+                console.log('[WebSocket] Cleaned up old message IDs, kept:', this.messageIds.size);
               }
               
+              // Notify listeners with the actual message
+              console.log('[WebSocket] Notifying listeners with message, id:', msgId);
               this.notifyListeners('new_message', msg);
             } else if (data.type === 'pong') {
               console.log('[WebSocket] Pong received');
@@ -148,7 +207,7 @@ class WebSocketService {
               console.error('[WebSocket] Error from server:', data.error);
               this.notifyListeners('error', data);
             } else {
-              // Broadcast all other messages to all listeners
+              console.log('[WebSocket] Unknown message type:', data.type);
               this.notifyListeners('raw', data);
             }
           } catch (error) {
@@ -161,24 +220,26 @@ class WebSocketService {
           console.error('[WebSocket] Error:', error);
           this.isConnecting = false;
           this.notifyListeners('error', error);
-          reject(error);
         };
 
         this.ws.onclose = (event) => {
           clearTimeout(timeout);
           console.log('[WebSocket] Disconnected:', event.code, event.reason);
           this.isConnecting = false;
+          this.cleanup();
           
-          // Don't auto-reconnect - let the app handle reconnection via polling or user action
-          // Only log the disconnect for debugging
-          if (event.code !== 1000) {
-            console.log('[WebSocket] Abnormal close, wsService will handle via polling');
+          if (event.code !== 1000 && this.currentChatId) {
+            console.log('[WebSocket] Scheduling auto-reconnect...');
+            this.handleReconnect(this.currentChatId);
           }
         };
       });
     } catch (error) {
       this.isConnecting = false;
       console.error('[WebSocket] Connection error:', error);
+      if (chatId) {
+        this.handleReconnect(chatId);
+      }
       throw error;
     }
   }
@@ -187,15 +248,17 @@ class WebSocketService {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       const delay = this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1);
-      console.log(`[WebSocket] Reconnecting... Attempt ${this.reconnectAttempts} in ${delay}ms`);
+      console.log(`[WSReconnect] Reconnecting... Attempt ${this.reconnectAttempts} in ${delay}ms`);
       
-      setTimeout(() => {
+      // BUG FIX: store the timer so disconnect() can cancel it
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
         this.connect(chatId).catch((error) => {
-          console.error('[WebSocket] Reconnect failed:', error);
+          console.error('[WSReconnect] Reconnect failed:', error.message);
         });
       }, delay);
     } else {
-      console.error('[WebSocket] Max reconnect attempts reached');
+      console.error('[WSReconnect] Max reconnect attempts reached');
       this.notifyListeners('error', { message: 'Connection lost. Please restart the app.' });
     }
   }
@@ -227,15 +290,39 @@ class WebSocketService {
   }
 
   disconnect() {
+    console.log('[AuthCleanup] WebSocket disconnect() called');
+    
+    // BUG FIX: cancel any pending reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+      console.log('[AuthCleanup] Cleared pending reconnect timer');
+    }
+    
     if (this.ws) {
       this.ws.close(1000, 'User disconnected');
       this.ws = null;
     }
     this.currentChatId = null;
+    this.activeConversationId = null;  // BUG FIX: clear active conversation
     this.reconnectAttempts = 0;
     this.isConnecting = false;
     this.messageIds.clear();
-    console.log('[WebSocket] Disconnected (socket closed, listeners preserved)');
+    console.log('[AuthCleanup] WebSocket fully disconnected and state cleared');
+  }
+
+  cleanup() {
+    const maxIds = 200;
+    if (this.messageIds.size > maxIds) {
+      const arr = Array.from(this.messageIds);
+      this.messageIds = new Set(arr.slice(-maxIds));
+      console.log('[WebSocket] Cleaned up message IDs');
+    }
+  }
+
+  clearMessageIds() {
+    this.messageIds.clear();
+    console.log('[WebSocket] Cleared all message IDs');
   }
 
   addListener(event, callback) {
@@ -246,8 +333,6 @@ class WebSocketService {
     if (!callbacks.includes(callback)) {
       callbacks.push(callback);
       console.log('[WebSocket] Listener added for:', event);
-    } else {
-      console.log('[WebSocket] Listener already exists for:', event);
     }
   }
 

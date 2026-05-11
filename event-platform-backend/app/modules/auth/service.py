@@ -72,7 +72,7 @@ class AuthService:
 
         AuthRepository.save_refresh_token(db, refresh_token)
 
-        return access_token, refresh_token_value
+        return access_token, refresh_token_value, user
 
     @staticmethod
     def refresh(db: Session, refresh_token: str):

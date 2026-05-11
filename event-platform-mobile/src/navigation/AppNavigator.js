@@ -1,9 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
-import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
-import { useNotifications } from '../contexts/NotificationContext';
+import { navigationRef, onNavigationReady } from '../utils/navigationService';
 import AuthNavigator from './AuthNavigator';
 import MainTabNavigator from './MainTabNavigator';
 import ListingDetailScreen from '../screens/home/ListingDetailScreen';
@@ -23,34 +23,8 @@ const Stack = createNativeStackNavigator();
 
 const AppNavigator = () => {
   const { isAuthenticated, loading, user } = useAuth();
-  const navigationRef = useNavigationContainerRef();
-  const { refreshNotifications } = useNotifications();
 
-  const navigationKey = user?.role || 'loading';
-
-  useEffect(() => {
-    const handleDeepLink = async (data) => {
-      if (data?.url) {
-        const url = data.url;
-        console.log('[AppNavigator] Deep link:', url);
-        
-        if (url.includes('booking')) {
-          const bookingId = url.split('booking/')[1];
-          if (bookingId && navigationRef.current) {
-            navigationRef.current.navigate('BookingDetail', { bookingId });
-          }
-        }
-      }
-    };
-
-    const subscription = navigationRef.current?.addListener('state', (e) => {
-      console.log('[AppNavigator] Navigation state:', e.data);
-    });
-
-    return () => {
-      if (subscription) subscription.remove();
-    };
-  }, [navigationRef]);
+  console.log('[AppNavigator] Render — isAuthenticated:', isAuthenticated, 'loading:', loading, 'role:', user?.role);
 
   if (loading) {
     return (
@@ -61,7 +35,17 @@ const AppNavigator = () => {
   }
 
   return (
-    <NavigationContainer ref={navigationRef} key={navigationKey}>
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        console.log('[AppNavigator] NavigationContainer onReady fired');
+        onNavigationReady();
+      }}
+      onStateChange={(state) => {
+        const currentRoute = state?.routes?.[state.index];
+        console.log('[AppNavigator] Navigation state changed:', currentRoute?.name, JSON.stringify(currentRoute?.params || {}).slice(0, 100));
+      }}
+    >
       {isAuthenticated ? (
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="MainTabs" component={MainTabNavigator} />

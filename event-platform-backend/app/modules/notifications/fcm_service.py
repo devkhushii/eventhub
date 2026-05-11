@@ -2,14 +2,12 @@
 
 """
 FCM Service for Firebase Cloud Messaging.
-This is reserved for future use when migrating from Expo to Firebase directly.
+Sends push notifications via Firebase Admin SDK.
 """
 
 import logging
-import json
 import os
 from typing import Optional, List
-from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -27,16 +25,30 @@ class FCMService:
             import firebase_admin
             from firebase_admin import credentials
 
-            service_account_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                "service_account.json",
-            )
+            candidates = [
+                "/app/service_account.json",
+                os.path.join(
+                    os.path.dirname(__file__), "..", "..", "..", "service_account.json"
+                ),
+                os.path.join(
+                    os.path.dirname(__file__),
+                    "..",
+                    "..",
+                    "..",
+                    "..",
+                    "service_account.json",
+                ),
+            ]
 
-            if not os.path.exists(service_account_path):
-                logger.warning(
-                    f"[FCM] Service account file not found at {service_account_path}. "
-                    "FCM service will remain disabled."
-                )
+            service_account_path = None
+            for candidate in candidates:
+                if os.path.exists(candidate):
+                    service_account_path = candidate
+                    logger.info(f"[FCM] Found service account at: {candidate}")
+                    break
+
+            if not service_account_path:
+                logger.warning("[FCM] Service account file not found")
                 return
 
             if not firebase_admin._apps:
@@ -62,18 +74,7 @@ class FCMService:
         message: str,
         data: Optional[dict] = None,
     ) -> dict:
-        """
-        Send push notification via FCM to a single device.
-
-        Args:
-            token: FCM device token
-            title: Notification title
-            message: Notification body
-            data: Optional data payload
-
-        Returns:
-            dict with success status and details
-        """
+        """Send push notification via FCM to a single device."""
         if not self.initialized:
             return {"success": False, "error": "FCM not initialized"}
 
@@ -124,18 +125,7 @@ class FCMService:
         message: str,
         data: Optional[dict] = None,
     ) -> dict:
-        """
-        Send push notification to multiple devices via FCM.
-
-        Args:
-            tokens: List of FCM device tokens
-            title: Notification title
-            message: Notification body
-            data: Optional data payload
-
-        Returns:
-            dict with success count and errors
-        """
+        """Send push notification to multiple devices via FCM."""
         if not self.initialized:
             return {"success": False, "error": "FCM not initialized"}
 
@@ -177,55 +167,6 @@ class FCMService:
 
         except Exception as e:
             logger.error(f"[FCM] Batch send failed: {e}")
-            return {"success": False, "error": str(e)}
-
-    async def subscribe_to_topic(
-        self,
-        token: str,
-        topic: str,
-    ) -> dict:
-        """Subscribe a device to a topic."""
-        if not self.initialized:
-            return {"success": False, "error": "FCM not initialized"}
-
-        try:
-            from firebase_admin import messaging
-
-            response = messaging.subscribe_to_topic([token], topic)
-            logger.info(
-                f"[FCM] Subscribed to topic {topic}: {response.success_count} success"
-            )
-            return {"success": True, "success_count": response.success_count}
-        except Exception as e:
-            logger.error(f"[FCM] Subscribe failed: {e}")
-            return {"success": False, "error": str(e)}
-
-    async def send_topic_notification(
-        self,
-        topic: str,
-        title: str,
-        message: str,
-        data: Optional[dict] = None,
-    ) -> dict:
-        """Send notification to all subscribers of a topic."""
-        if not self.initialized:
-            return {"success": False, "error": "FCM not initialized"}
-
-        try:
-            from firebase_admin import messaging
-
-            notification = messaging.Notification(title=title, body=message)
-            fcm_message = messaging.Message(
-                notification=notification,
-                data=data or {},
-                topic=topic,
-            )
-
-            response = messaging.send(fcm_message)
-            logger.info(f"[FCM] Topic message sent: {response}")
-            return {"success": True, "message_id": response}
-        except Exception as e:
-            logger.error(f"[FCM] Topic notification failed: {e}")
             return {"success": False, "error": str(e)}
 
 

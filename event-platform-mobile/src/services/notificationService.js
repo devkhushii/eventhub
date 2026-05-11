@@ -1,236 +1,127 @@
-import Constants from 'expo-constants';
-import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
+import messaging from '@react-native-firebase/messaging';
 import * as vendorsApi from '../api/vendors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const NOTIFICATION_STORAGE_KEY = 'device_notification_token';
+const NOTIFICATION_STORAGE_KEY = 'fcm_token';
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 5000;
 
-const EnvironmentInfo = {
-  isSupported: false,
-  isDevice: false,
-  hasNotifications: false,
-  projectId: null,
-};
-
-export const detectEnvironment = () => {
-  const isDevice = Device.isDevice;
-  const hasNotifications = typeof Notifications?.addNotificationReceivedObserver === 'function';
-  
-  const projectId = 
-    Constants.expoConfig?.extra?.eas?.projectId || 
-    Constants.expoConfig?.extra?.projectId ||
-    Constants.expoConfig?.projectId;
-
-  const isSupported = isDevice && hasNotifications && !!projectId;
-
-  Object.assign(EnvironmentInfo, {
-    isDevice,
-    hasNotifications,
-    projectId,
-    isSupported,
-  });
-
-  console.log('[Notifications] Environment detection:', {
-    isDevice,
-    hasNotifications,
-    projectId: projectId ? `${projectId.substring(0, 8)}...` : null,
-    isSupported,
-  });
-
-  return EnvironmentInfo;
-};
-
-export const getEnvironmentInfo = () => EnvironmentInfo;
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
-
-export const requestNotificationPermissions = async () => {
-  const env = detectEnvironment();
-  console.log('[Notifications] Environment check:', env);
-
-  if (!env.isDevice) {
-    console.log('[Notifications] ⚠️ Push notifications require a physical device');
-    console.log('[Notifications] Running on emulator/simulator - notifications will not work');
-    return null;
-  }
-
-  if (!env.hasNotifications) {
-    console.log('[Notifications] ⚠️ expo-notifications not available');
-    console.log('[Notifications] This may be running in Expo Go. Use development build for push notifications.');
-    return null;
-  }
-
+export const requestPermission = async () => {
+  console.log('[NotifService] Requesting FCM permission...');
   try {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    console.log('[Notifications] Existing permission status:', existingStatus);
-
-    let finalStatus = existingStatus;
-    if (existingStatus !== 'granted') {
-      console.log('[Notifications] Requesting permissions...');
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-      console.log('[Notifications] Requested permission status:', status);
-    }
-
-    if (finalStatus !== 'granted') {
-      console.log('[Notifications] ❌ Permission not granted:', finalStatus);
-      return null;
-    }
-
-    console.log('[Notifications] ✅ Permission granted');
-
-    if (!env.projectId) {
-      console.log('[Notifications] ⚠️ No projectId configured - cannot get push token');
-      console.log('[Notifications] Configure expo.projectId in app.json/app.config.js');
-      return null;
-    }
-
-    const token = await Notifications.getExpoPushTokenAsync({
-      projectId: env.projectId,
-    });
-
-    console.log('[Notifications] ✅ Expo push token obtained:', token.data.substring(0, 40) + '...');
-    return token.data;
-
+    const authStatus = await messaging().requestPermission();
+    const enabled = 
+      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+      authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+    console.log('[NotifService] Permission:', enabled ? 'GRANTED' : 'DENIED');
+    return enabled;
   } catch (error) {
-    console.log('[Notifications] ❌ Error getting push token:', error.message);
+    console.log('[NotifService] Permission error:', error.message);
+    return false;
+  }
+};
+
+export const getFCMToken = async (retryCount = 0) => {
+  console.log(`[NotifService] Getting FCM token (attempt ${retryCount + 1}/${MAX_RETRIES})...`);
+  
+  try {
+    const token = await messaging().getToken();
+    if (token) {
+      console.log('[NotifService] FCM token obtained:', token.substring(0, 20) + '...');
+      return token;
+    }
+    console.log('[NotifService] Empty token received');
+    return null;
+  } catch (error) {
+    console.log('[NotifService] getToken failed:', error.message);
+    
+    if (retryCount < MAX_RETRIES - 1) {
+      console.log(`[NotifService] Retrying in ${RETRY_DELAY}ms...`);
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+      return getFCMToken(retryCount + 1);
+    }
     return null;
   }
 };
 
-export const registerDeviceToken = async (fcmToken) => {
-  if (!fcmToken) {
-    console.log('[Notifications] No FCM token to register');
+export const registerToken = async (token) => {
+  if (!token) {
+    console.log('[NotifService] No token to register');
     return false;
   }
 
   try {
-    console.log('[Notifications] Registering device token...');
-    await vendorsApi.registerDeviceToken(fcmToken, 'expo');
-    console.log('[Notifications] ✅ Token registered successfully');
-    
-    await AsyncStorage.setItem(NOTIFICATION_STORAGE_KEY, fcmToken);
+    console.log('[NotifService] Registering token with backend...');
+    await vendorsApi.registerDeviceToken(token, 'fcm');
+    await AsyncStorage.setItem(NOTIFICATION_STORAGE_KEY, token);
+    console.log('[NotifService] Token registered');
     return true;
   } catch (error) {
-    console.log('[Notifications] Failed to register token:', error?.response?.data || error.message);
+    console.log('[NotifService] Registration failed:', error.message);
     return false;
   }
 };
 
-export const unregisterDeviceToken = async () => {
+export const unregisterToken = async () => {
   try {
     const storedToken = await AsyncStorage.getItem(NOTIFICATION_STORAGE_KEY);
     if (storedToken) {
       await vendorsApi.unregisterDeviceToken(storedToken);
-      console.log('[Notifications] Token unregistered');
     }
     await AsyncStorage.removeItem(NOTIFICATION_STORAGE_KEY);
+    console.log('[NotifService] Token unregistered');
   } catch (error) {
-    console.log('[Notifications] Failed to unregister token:', error?.message);
+    console.log('[NotifService] Unregister error:', error.message);
   }
 };
 
-export const setupNotificationHandlers = (onNotificationReceived, onNotificationResponse) => {
-  const env = detectEnvironment();
-  
-  if (!env.hasNotifications) {
-    console.log('[Notifications] Cannot setup handlers - notifications not available');
-    return () => {};
-  }
+export const setupMessageHandlers = (onMessage) => {
+  console.log('[NotifService] Setting up FCM handlers...');
 
-  console.log('[Notifications] Setting up notification handlers...');
+  messaging().onMessage(async (remoteMessage) => {
+    console.log('[NotifService] Foreground message:', remoteMessage.notification?.title);
+    if (onMessage) onMessage(remoteMessage);
+  });
 
-  let foregroundSubscription = null;
-  let responseSubscription = null;
+  messaging().onTokenRefresh(async (token) => {
+    console.log('[NotifService] Token refreshed');
+    await registerToken(token);
+  });
 
-  try {
-    foregroundSubscription = Notifications.addNotificationReceivedObserver((notification) => {
-      console.log('[Notifications] 📬 Foreground notification received');
-      console.log('[Notifications] Notification:', JSON.stringify({
-        title: notification?.request?.content?.title,
-        body: notification?.request?.content?.body,
-      }, null, 2));
-      
-      if (onNotificationReceived) {
-        onNotificationReceived(notification);
-      }
-    });
-
-    responseSubscription = Notifications.addNotificationResponseReceivedObserver((response) => {
-      console.log('[Notifications] 👆 Notification response received');
-      console.log('[Notifications] Response action:', response?.actionIdentifier);
-      console.log('[Notifications] Notification:', JSON.stringify({
-        title: response?.notification?.request?.content?.title,
-      }, null, 2));
-      
-      if (onNotificationResponse) {
-        onNotificationResponse(response);
-      }
-    });
-
-    console.log('[Notifications] ✅ Notification handlers registered');
-  } catch (error) {
-    console.log('[Notifications] ❌ Error setting up handlers:', error.message);
-  }
-
-  return () => {
-    console.log('[Notifications] Cleaning up notification handlers');
-    if (foregroundSubscription) {
-      try {
-        foregroundSubscription.remove();
-      } catch (e) {
-        console.log('[Notifications] Error removing foreground handler:', e.message);
-      }
-    }
-    if (responseSubscription) {
-      try {
-        responseSubscription.remove();
-      } catch (e) {
-        console.log('[Notifications] Error removing response handler:', e.message);
-      }
-    }
-  };
-};
-
-export const updateBadgeCount = async (count) => {
-  const env = detectEnvironment();
-  
-  if (!env.hasNotifications) {
-    console.log('[Notifications] Badge not supported - notifications unavailable');
-    return;
-  }
-
-  try {
-    await Notifications.setBadgeCountAsync(count);
-    console.log('[Notifications] Badge count updated:', count);
-  } catch (error) {
-    console.log('[Notifications] Failed to set badge:', error.message);
-  }
+  return () => {};
 };
 
 export const getStoredToken = async () => {
   try {
     return await AsyncStorage.getItem(NOTIFICATION_STORAGE_KEY);
   } catch (error) {
-    console.log('[Notifications] Error reading stored token:', error.message);
     return null;
   }
 };
 
+export const initializeNotifications = async () => {
+  console.log('[NotifService] Initializing FCM...');
+  
+  const permissionGranted = await requestPermission();
+  if (!permissionGranted) {
+    console.log('[NotifService] Permission denied');
+    return null;
+  }
+
+  const token = await getFCMToken();
+  if (token) {
+    await registerToken(token);
+  }
+
+  return token;
+};
+
 export default {
-  detectEnvironment,
-  getEnvironmentInfo,
-  requestNotificationPermissions,
-  registerDeviceToken,
-  unregisterDeviceToken,
-  setupNotificationHandlers,
-  updateBadgeCount,
+  requestPermission,
+  getFCMToken,
+  registerToken,
+  unregisterToken,
+  setupMessageHandlers,
   getStoredToken,
+  initializeNotifications,
 };

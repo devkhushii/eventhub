@@ -2,7 +2,7 @@
 
 import uuid
 import enum
-from sqlalchemy import Column, ForeignKey, Boolean, DateTime, String, Enum  # type: ignore
+from sqlalchemy import Column, ForeignKey, Boolean, DateTime, String, Enum, Text  # type: ignore
 from sqlalchemy.dialects.postgresql import UUID  # type: ignore
 from sqlalchemy.orm import relationship  # type: ignore
 from sqlalchemy.sql import func  # type: ignore
@@ -31,10 +31,36 @@ class Notification(Base):
     reference_id = Column(UUID(as_uuid=True), nullable=True, index=True)
 
     title = Column(String(255), nullable=False)
-    message = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
 
     is_read = Column(Boolean, default=False, nullable=False, index=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="notifications")
+
+
+class DevicePlatform(str, enum.Enum):
+    ANDROID = "ANDROID"
+    IOS = "IOS"
+    WEB = "WEB"
+
+
+class DeviceToken(Base):
+    __tablename__ = "device_tokens"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+    token = Column(String, nullable=False, index=True)
+    platform = Column(
+        Enum(DevicePlatform), default=DevicePlatform.ANDROID, nullable=False
+    )
+    device_id = Column(String, nullable=True)
+    app_version = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    last_used_at = Column(DateTime(timezone=True), server_default=func.now())

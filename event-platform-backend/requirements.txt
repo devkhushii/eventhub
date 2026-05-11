@@ -3,6 +3,7 @@ celery
 faker
 fastapi-mail
 fastapi[all]
+firebase-admin
 gunicorn
 passlib[bcrypt]
 psycopg2-binary

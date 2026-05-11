@@ -1,11 +1,14 @@
 # app/modules/chat/router.py
 
+import logging
 from fastapi import APIRouter, Depends, Query  # type: ignore
 from sqlalchemy.orm import Session  # type: ignore
 from uuid import UUID
 from typing import Optional
 
 from app.db.session import get_db
+
+logger = logging.getLogger(__name__)
 from app.core.dependencies import get_current_user
 from app.modules.users.models import User
 from app.modules.vendors.dependencies import require_vendor
@@ -52,7 +55,11 @@ def get_my_chats(
         chat_resp = ChatRoomResponse.model_validate(chat)
         summary = ChatService.get_chat_summary(db, chat, current_user.id)
         chat_resp.last_message = summary["last_message"]
+        chat_resp.last_message_text = summary["last_message_text"]
         chat_resp.unread_count = summary["unread_count"]
+        print(
+            f"[Chat API] Chat {chat.id}: last_message={summary.get('last_message_text')}, unread={summary.get('unread_count')}"
+        )
         data.append(chat_resp)
 
     return PaginatedChatRoomsResponse(data=data, total=total, page=page, limit=limit)
@@ -73,6 +80,7 @@ def get_vendor_chats(
         chat_resp = ChatRoomResponse.model_validate(chat)
         summary = ChatService.get_chat_summary(db, chat, vendor.id)
         chat_resp.last_message = summary["last_message"]
+        chat_resp.last_message_text = summary["last_message_text"]
         chat_resp.unread_count = summary["unread_count"]
         data.append(chat_resp)
 
@@ -107,6 +115,33 @@ def send_message(
     current_user: User = Depends(get_current_user),
 ):
     message = ChatService.send_message(db, chat_id, current_user.id, data.content)
+
+    broadcast_data = {
+        "type": "new_message",
+        "conversation_id": str(chat_id),
+        "message": {
+            "id": str(message.id),
+            "content": message.content,
+            "sender_id": str(message.sender_id),
+            "created_at": message.created_at.isoformat()
+            if message.created_at
+            else None,
+            "is_read": message.is_read,
+        },
+    }
+
+    def _broadcast():
+        import asyncio
+        from app.modules.chat.websocket import manager
+
+        asyncio.run(manager.broadcast(str(chat_id), broadcast_data))
+
+    import threading
+
+    threading.Thread(target=_broadcast, daemon=True).start()
+
+    logger.info(f"[REST] Message sent and broadcast for chat {chat_id}")
+
     return MessageResponse.model_validate(message)
 
 

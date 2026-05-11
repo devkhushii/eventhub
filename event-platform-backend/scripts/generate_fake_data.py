@@ -335,7 +335,7 @@ def add_listing_images(listings):
         for _ in range(image_count):
             image = ListingImage(
                 listing_id=listing.id,
-                image_url=f"https://picsum.photos/seed/{fake.uuid4()}/800/600",
+                image_url=f"D:/eventhubcelebrato/eventhub/event-platform-backend/uploads/listings/bg12.webp",
             )
             db.add(image)
             total_images += 1

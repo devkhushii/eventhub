@@ -6,6 +6,14 @@ from datetime import datetime
 from typing import Optional, List
 
 
+class LastMessageSchema(BaseModel):
+    id: UUID
+    content: str
+    sender_id: UUID
+    created_at: datetime
+    is_read: bool = False
+
+
 class ChatRoomCreate(BaseModel):
     vendor_id: UUID
     listing_id: Optional[UUID] = None
@@ -49,7 +57,8 @@ class ChatRoomResponse(BaseModel):
     user: UserSummary
     vendor: VendorSummary
     listing: Optional[ListingSummary] = None
-    last_message: Optional[str] = None
+    last_message: Optional[LastMessageSchema] = None
+    last_message_text: Optional[str] = None
     unread_count: int = 0
 
     class Config:

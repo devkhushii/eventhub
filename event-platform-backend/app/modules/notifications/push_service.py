@@ -1,35 +1,34 @@
 # app/modules/notifications/push_service.py
 
 import logging
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
 
 class PushNotificationService:
-    """Service for sending push notifications via Expo."""
+    """Service for sending push notifications via FCM (Firebase Cloud Messaging)."""
 
     def __init__(self):
         self.enabled = False
-        self._expo_client = None
+        self._fcm_service = None
         self._initialize()
 
     def _initialize(self):
-        """Initialize Expo push notification client."""
+        """Initialize FCM service."""
         try:
-            from expo_server_sdk import ExpoPushClient
-            from expo_server_sdk import PushMessage
+            from app.modules.notifications.fcm_service import fcm_service
 
-            self._expo_client = ExpoPushClient()
-            self.enabled = True
-            logger.info("[Push] Expo push notifications enabled")
-        except ImportError:
-            logger.warning(
-                "[Push] expo-server-sdk not installed. Push notifications disabled."
-            )
+            self._fcm_service = fcm_service
+            self.enabled = fcm_service.is_available()
+
+            if self.enabled:
+                logger.info("[Push] FCM push notifications enabled")
+            else:
+                logger.warning("[Push] FCM service not available")
         except Exception as e:
-            logger.warning(f"[Push] Failed to initialize Expo: {e}")
+            logger.warning(f"[Push] Failed to initialize FCM: {e}")
 
     async def send_notification(
         self,
@@ -39,10 +38,10 @@ class PushNotificationService:
         data: dict = None,
         device_tokens: list = None,
     ) -> bool:
-        """Send push notification to user's device(s)."""
+        """Send push notification to user's device(s) via FCM."""
         if not self.enabled:
             logger.info(
-                f"[Push] Push disabled, skipping notification for user {user_id}"
+                f"[Push] FCM disabled, skipping notification for user {user_id}"
             )
             return False
 
@@ -53,51 +52,52 @@ class PushNotificationService:
             return False
 
         try:
-            messages = []
-            for token in tokens:
-                if token:
-                    messages.append(
-                        {
-                            "to": token,
-                            "title": title,
-                            "body": body,
-                            "data": data or {},
-                            "sound": "default",
-                            "priority": "high",
-                        }
-                    )
+            token_strings = [t.token if hasattr(t, "token") else str(t) for t in tokens]
 
-            if not messages:
+            logger.info(
+                f"[Push] Sending FCM to {len(token_strings)} devices for user {user_id}"
+            )
+
+            if len(token_strings) == 1:
+                result = await self._fcm_service.send_notification(
+                    token=token_strings[0],
+                    title=title,
+                    message=body,
+                    data=data or {},
+                )
+            else:
+                result = await self._fcm_service.send_batch(
+                    tokens=token_strings,
+                    title=title,
+                    message=body,
+                    data=data or {},
+                )
+
+            if result.get("success"):
+                logger.info(f"[Push] FCM sent successfully to user {user_id}")
+                return True
+            else:
+                logger.error(f"[Push] FCM failed: {result.get('error')}")
                 return False
-
-            response = self._expo_client.push_message_send(messages)
-
-            if response.get("errors"):
-                for error in response.get("errors", []):
-                    logger.error(f"[Push] Error: {error}")
-                return False
-
-            logger.info(f"[Push] Sent {len(messages)} notifications to user {user_id}")
-            return True
 
         except Exception as e:
             logger.error(f"[Push] Failed to send notification: {e}")
             return False
 
-    async def _get_user_device_tokens(self, user_id: UUID) -> list:
-        """Get user's device tokens from database."""
+    async def _get_user_device_tokens(self, user_id: UUID) -> List:
+        """Get user's device tokens from DeviceToken table."""
         try:
+            from app.modules.notifications.repository import DeviceTokenRepository
             from app.db.session import SessionLocal
-            from app.modules.users.models import User
 
             db = SessionLocal()
             try:
-                user = db.query(User).filter(User.id == user_id).first()
-                if user and user.device_token:
-                    return [user.device_token]
-                if user and user.fcm_token:
-                    return [user.fcm_token]
-                return []
+                repo = DeviceTokenRepository(db)
+                tokens = repo.get_active_tokens_by_user(user_id)
+                logger.info(
+                    f"[Push] Found {len(tokens)} active tokens for user {user_id}"
+                )
+                return tokens
             finally:
                 db.close()
         except Exception as e:
@@ -125,12 +125,16 @@ class PushNotificationService:
     async def send_chat_notification(
         self, user_id: UUID, chat_id: UUID, sender_name: str, message_preview: str
     ):
-        """Send new chat message notification."""
+        """Send new chat message notification with proper data payload."""
         await self.send_notification(
             user_id=user_id,
             title=f"New message from {sender_name}",
             body=message_preview[:100] if message_preview else "New message",
-            data={"type": "CHAT", "chat_id": str(chat_id)},
+            data={
+                "type": "MESSAGE",
+                "chat_id": str(chat_id),
+                "click_action": "OPEN_CHAT",
+            },
         )
 
     async def send_vendor_approval_notification(

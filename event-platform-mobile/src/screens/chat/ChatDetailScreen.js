@@ -21,8 +21,13 @@ import { useAuth } from '../../contexts/AuthContext';
 const ChatDetailScreen = () => {
   const route = useRoute();
   const navigation = useNavigation();
-  const { chatId, chatName } = route.params || {};
+  const { chatId, chatName, fromNotification } = route.params || {};
   const { user } = useAuth();
+  
+  console.log('[Chat] ChatDetailScreen rendered');
+  console.log('[Chat]   chatId:', chatId);
+  console.log('[Chat]   chatName:', chatName);
+  console.log('[Chat]   fromNotification:', fromNotification);
   
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
@@ -33,22 +38,57 @@ const ChatDetailScreen = () => {
   
   const flatListRef = useRef(null);
   const pendingMessages = useRef(new Set());
+  const isActiveRef = useRef(true);
+  const lastPolledCountRef = useRef(0);
   
+  // ========================================
+  // Set navigation title from chatName
+  // ========================================
+  useEffect(() => {
+    if (chatName) {
+      navigation.setOptions({ title: chatName });
+      console.log('[Chat] Set navigation title to:', chatName);
+    }
+  }, [chatName, navigation]);
+
+  // ========================================
+  // Mark chat as read + set active conversation
+  // ========================================
+  useFocusEffect(
+    useCallback(() => {
+      if (!chatId) return;
+
+      console.log('[Chat] Screen focused — marking as read and setting active conversation');
+      
+      // Mark messages as read
+      chatApi.markChatAsRead(chatId).then((result) => {
+        console.log('[Chat] markChatAsRead result:', JSON.stringify(result));
+      }).catch((error) => {
+        console.log('[Chat] markChatAsRead error:', error.message);
+      });
+
+      // Tell the WS service which conversation is active
+      // This info is used to suppress duplicate push notifications
+      wsService.setActiveConversation(chatId);
+
+      return () => {
+        console.log('[Chat] Screen unfocused — clearing active conversation');
+        wsService.setActiveConversation(null);
+      };
+    }, [chatId])
+  );
+
+  // ========================================
+  // Fetch Messages
+  // ========================================
   const fetchMessages = async () => {
     if (!chatId) return;
     
     try {
       console.log('[Chat] Fetching messages for chat:', chatId);
       
-      // Call the API - handle both array and object response
-      const data = await chatApi.getChatMessages(chatId);
-      
-      let messageList = [];
-      if (Array.isArray(data)) {
-        messageList = data;
-      } else if (data && Array.isArray(data.data)) {
-        messageList = data.data;
-      }
+      // getChatMessages now returns a flat array (pagination unwrapped in chat.js)
+      const messageList = await chatApi.getChatMessages(chatId);
       
       // Track existing message IDs to prevent duplicates
       messageList.forEach(msg => {
@@ -72,123 +112,160 @@ const ChatDetailScreen = () => {
     }
   };
 
+  // ========================================
+  // WebSocket Message Handler
+  // ========================================
   const handleWebSocketMessage = useCallback((message) => {
-    if (!message) return;
+    if (!message) {
+      console.log('[Chat] WebSocket message handler received null/empty');
+      return;
+    }
+    
+    console.log('[Chat] 📩 WebSocket message received:', JSON.stringify(message).slice(0, 200));
     
     const msgId = message.id?.toString();
     
-    // Skip if we already have this message
     if (msgId && pendingMessages.current.has(msgId)) {
       console.log('[Chat] Skipping duplicate message:', msgId);
       return;
     }
     
-    // Add to known messages
     if (msgId) {
       pendingMessages.current.add(msgId);
     }
     
     setMessages(prev => {
-      // Check if message already exists
-      const exists = prev.some(m => m.id === message.id);
-      if (exists) return prev;
+      const exists = prev.some(m => String(m.id) === String(message.id));
+      if (exists) {
+        console.log('[Chat] Message already in state:', msgId);
+        return prev;
+      }
       
-      console.log('[Chat] New message added via WebSocket');
+      console.log('[Chat] ✅ Adding new message to state, id:', msgId);
       return [...prev, message];
     });
     
-    // Scroll to latest message
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 100);
+
+    // Mark as read since user is actively viewing
+    if (chatId) {
+      chatApi.markChatAsRead(chatId).catch(() => {});
+    }
+  }, [chatId]);
+
+  // ========================================
+  // WebSocket Error Handler
+  // ========================================
+  const handleWsError = useCallback((error) => {
+    console.log('[Chat] WebSocket error:', error);
+    setWsError(error?.message || 'Connection error');
   }, []);
 
+  // ========================================
+  // WebSocket Connect
+  // ========================================
   const connectWebSocket = useCallback(async () => {
     if (!chatId) return;
     
     setWsError(null);
     
     try {
-      console.log('[Chat] Connecting to WebSocket...');
+      console.log('[Chat] Connecting to WebSocket for chat:', chatId);
       await wsService.connect(chatId);
       setWsConnected(true);
-      console.log('[Chat] WebSocket connected');
+      console.log('[Chat] ✅ WebSocket connected successfully');
       
       // Add listener for new messages
       wsService.addListener('new_message', handleWebSocketMessage);
       
       // Add error listener
-      wsService.addListener('error', (error) => {
-        console.log('[Chat] WebSocket error:', error);
-        setWsError(error?.message || 'Connection error');
-      });
+      wsService.addListener('error', handleWsError);
       
     } catch (error) {
-      console.error('[Chat] WebSocket connection failed:', error);
+      console.error('[Chat] ❌ WebSocket connection failed:', error);
       setWsConnected(false);
       setWsError(error?.message || 'Failed to connect');
     }
-  }, [chatId, handleWebSocketMessage]);
+  }, [chatId, handleWebSocketMessage, handleWsError]);
 
+  // ========================================
+  // Main Effect
+  // ========================================
   useEffect(() => {
     if (!chatId) return;
     
+    isActiveRef.current = true;
+    
+    console.log('[Chat] Effect running for chat:', chatId);
     fetchMessages();
     connectWebSocket();
     
     return () => {
-      console.log('[Chat] Cleaning up WebSocket connection');
+      isActiveRef.current = false;
+      console.log('[Chat] Component unmounting for chat:', chatId);
+      // Remove our listeners (but don't disconnect the socket)
       wsService.removeListener('new_message', handleWebSocketMessage);
-      wsService.disconnect();
+      wsService.removeListener('error', handleWsError);
     };
   }, [chatId]);
 
-  // Fallback polling - always runs to ensure receiver gets messages
+  // ========================================
+  // Fallback Polling
+  // ========================================
   useFocusEffect(
     useCallback(() => {
       if (!chatId) return;
       
-      let pollingInterval;
+      let pollingInterval = null;
       
       const pollMessages = async () => {
+        if (!isActiveRef.current) return;
+        
         try {
-          const data = await chatApi.getChatMessages(chatId);
-          let messageList = [];
-          if (Array.isArray(data)) {
-            messageList = data;
-          } else if (data && Array.isArray(data.data)) {
-            messageList = data.data;
-          }
+          const messageList = await chatApi.getChatMessages(chatId);
           
-          // Merge with existing messages, avoiding duplicates
+          if (messageList.length === lastPolledCountRef.current) return;
+          
           setMessages(prev => {
-            const existingIds = new Set(prev.map(m => m.id));
-            const newMsgs = messageList.filter(m => !existingIds.has(m.id));
+            const existingIds = new Set(prev.map(m => String(m.id)));
+            const newMsgs = messageList.filter(m => !existingIds.has(String(m.id)));
+            
             if (newMsgs.length > 0) {
               console.log('[Chat] Polling found', newMsgs.length, 'new messages');
-              return [...prev, ...newMsgs];
+              const combined = [...prev, ...newMsgs].sort((a, b) => {
+                const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+                const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+                return timeA - timeB;
+              });
+              return combined;
             }
             return prev;
           });
+          
+          lastPolledCountRef.current = messageList.length;
         } catch (e) {
           console.log('[Chat] Polling error:', e.message);
         }
       };
       
-      // Always start polling as reliable fallback
-      console.log('[Chat] Starting fallback polling');
-      pollMessages(); // Initial fetch
-      pollingInterval = setInterval(pollMessages, 4000); // Then every 4 seconds
+      console.log('[Chat] Fallback polling active (8s interval)');
+      pollingInterval = setInterval(pollMessages, 8000);
+      setTimeout(pollMessages, 1000);
       
       return () => {
         if (pollingInterval) {
           clearInterval(pollingInterval);
-          console.log('[Chat] Stopped polling');
+          console.log('[Chat] Polling stopped');
         }
       };
     }, [chatId])
   );
 
+  // ========================================
+  // Send Message
+  // ========================================
   const handleSend = useCallback(async () => {
     if (!newMessage.trim() || sending || !chatId) return;
     
@@ -227,16 +304,16 @@ const ChatDetailScreen = () => {
         pendingMessages.current.add(savedMessage.id.toString());
       }
       
-console.log('[Chat] Message sent successfully');
+      console.log('[Chat] ✅ Message sent successfully, id:', savedMessage.id);
        
     } catch (error) {
-      console.error('[Chat] Failed to send message:', error);
+      console.error('[Chat] ❌ Failed to send message:', error);
       
       // Remove optimistic message on failure
       setMessages(prev => prev.filter(m => m.id !== tempId));
       
-      // Show error to user
-      setNewMessage(messageText); // Restore message text
+      // Restore message text
+      setNewMessage(messageText);
     } finally {
       setSending(false);
       
@@ -247,6 +324,9 @@ console.log('[Chat] Message sent successfully');
     }
   }, [newMessage, sending, chatId, user]);
 
+  // ========================================
+  // Rendering Helpers
+  // ========================================
   const formatTime = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);

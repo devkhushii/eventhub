@@ -59,9 +59,9 @@ async def register(
 @router.post("/login", response_model=TokenResponse)
 def login(request: LoginRequest, db: Session = Depends(get_db)):
     try:
-        access, refresh = AuthService.login(db, request.email, request.password)
+        access, refresh, user = AuthService.login(db, request.email, request.password)
         return TokenResponse(
-            access_token=access, refresh_token=refresh, token_type="bearer"
+            access_token=access, refresh_token=refresh, token_type="bearer", user=user
         )
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
