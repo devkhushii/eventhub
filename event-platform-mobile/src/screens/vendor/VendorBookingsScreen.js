@@ -16,6 +16,7 @@ import Button from '../../components/Button';
 import LoadingScreen from '../../components/LoadingScreen';
 import EmptyState from '../../components/EmptyState';
 import { colors, shadows, borderRadius } from '../../styles/colors';
+import { FontAwesome5 } from '@expo/vector-icons';
 
 const VendorBookingCard = ({ booking, onAccept, onReject }) => {
   const [actionLoading, setActionLoading] = useState(null);
@@ -74,7 +75,7 @@ const VendorBookingCard = ({ booking, onAccept, onReject }) => {
 
         <View style={styles.cardBody}>
           <View style={styles.detailRow}>
-            <Text style={styles.detailIcon}>📅</Text>
+            <FontAwesome5 name="calendar-alt" size={14} color={colors.textSecondary} style={styles.detailIcon} />
             <Text style={styles.detailText}>{eventDate}</Text>
             {booking.end_date && (
               <Text style={styles.detailText}>
@@ -88,7 +89,7 @@ const VendorBookingCard = ({ booking, onAccept, onReject }) => {
           
           {booking.special_request && (
             <View style={styles.detailRow}>
-              <Text style={styles.detailIcon}>📝</Text>
+              <FontAwesome5 name="clipboard" size={14} color={colors.textSecondary} style={styles.detailIcon} />
               <Text style={styles.detailText} numberOfLines={2}>
                 {booking.special_request}
               </Text>
@@ -99,7 +100,7 @@ const VendorBookingCard = ({ booking, onAccept, onReject }) => {
             <View style={styles.priceRow}>
               <Text style={styles.priceLabel}>Total Amount</Text>
               <Text style={styles.priceValue}>
-                ${Number(booking.total_price).toLocaleString()}
+                ₹{Number(booking.total_price).toLocaleString()}
               </Text>
             </View>
           )}
@@ -356,7 +357,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   detailIcon: {
-    fontSize: 14,
     marginRight: 8,
   },
   detailText: {
@@ -381,7 +381,7 @@ const styles = StyleSheet.create({
   priceValue: {
     fontSize: 20,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.success,
   },
   cardActions: {
     flexDirection: 'row',

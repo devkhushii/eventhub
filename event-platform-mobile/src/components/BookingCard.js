@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { colors, shadows, borderRadius } from '../styles/colors';
 import StatusBadge from './StatusBadge';
 import { formatDate, formatCurrency, getImageSource } from '../utils/helpers';
+import { FontAwesome5 } from '@expo/vector-icons';
 
 const BookingCard = ({ booking, onPress, variant = 'user' }) => {
   if (!booking) {
@@ -48,7 +49,7 @@ const BookingCard = ({ booking, onPress, variant = 'user' }) => {
         
         <View style={styles.details}>
           <View style={styles.detailRow}>
-            <Text style={styles.detailIcon}>📅</Text>
+            <FontAwesome5 name="calendar-alt" size={14} color={colors.textSecondary} style={styles.detailIcon} />
             <Text style={styles.detailText}>{eventDate}</Text>
             {booking.end_date && (
               <Text style={styles.detailText}> - {formatDate(booking.end_date)}</Text>
@@ -57,7 +58,7 @@ const BookingCard = ({ booking, onPress, variant = 'user' }) => {
           
           {booking.user && (
             <View style={styles.detailRow}>
-              <Text style={styles.detailIcon}>👤</Text>
+              <FontAwesome5 name="user" size={14} color={colors.textSecondary} style={styles.detailIcon} />
               <Text style={styles.detailText}>
                 {booking.user.full_name || booking.user.email}
               </Text>
@@ -66,7 +67,7 @@ const BookingCard = ({ booking, onPress, variant = 'user' }) => {
           
           {booking.special_request && (
             <View style={styles.detailRow}>
-              <Text style={styles.detailIcon}>📝</Text>
+              <FontAwesome5 name="clipboard" size={14} color={colors.textSecondary} style={styles.detailIcon} />
               <Text style={styles.detailText} numberOfLines={1}>
                 {booking.special_request}
               </Text>
@@ -122,7 +123,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   detailIcon: {
-    fontSize: 14,
     marginRight: 8,
   },
   detailText: {
@@ -147,7 +147,7 @@ const styles = StyleSheet.create({
   priceValue: {
     fontSize: 20,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.success,
   },
 });
 

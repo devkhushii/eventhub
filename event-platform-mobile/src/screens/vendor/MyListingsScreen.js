@@ -93,7 +93,7 @@ const MyListingsScreen = ({ navigation }) => {
       <Card style={styles.listingCard}>
         <View style={styles.listingInfo}>
           <Text style={styles.listingTitle}>{item.title || 'Untitled'}</Text>
-          <Text style={styles.listingPrice}>${item.price || 0}</Text>
+          <Text style={styles.listingPrice}>₹{item.price || 0}</Text>
           <Text style={styles.listingType}>{item.listing_type || 'N/A'}</Text>
           {item.location && (
             <Text style={styles.listingLocation}>{item.location}</Text>
@@ -184,7 +184,7 @@ const styles = StyleSheet.create({
   listingPrice: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.success,
     marginBottom: 2,
   },
   listingType: {

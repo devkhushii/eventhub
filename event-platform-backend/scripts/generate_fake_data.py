@@ -335,7 +335,7 @@ def add_listing_images(listings):
         for _ in range(image_count):
             image = ListingImage(
                 listing_id=listing.id,
-                image_url=f"D:/eventhubcelebrato/eventhub/event-platform-backend/uploads/listings/bg12.webp",
+                image_url="https://share.google/mjMSKe4QvxRc2B1Ud",
             )
             db.add(image)
             total_images += 1
@@ -399,7 +399,6 @@ def create_bookings(users, listings, n=60):
             listing_id=listing.id,
             event_date=event_date,
             end_date=end_date,
-            total_days=total_days,
             total_price=round(total_price, 2),
             status=status,
             advance_amount=advance_amount if random.choice([True, False]) else None,

@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Alert, Linking, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Button from '../../components/Button';
 import colors from '../../styles/colors';
 
@@ -13,7 +14,7 @@ const VerifyEmailScreen = ({ navigation }) => {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.content}>
         <Text style={styles.title}>Verify Your Email</Text>
         <Text style={styles.message}>
@@ -37,7 +38,7 @@ const VerifyEmailScreen = ({ navigation }) => {
           <Text style={styles.linkText}>Back to Login</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 };
 

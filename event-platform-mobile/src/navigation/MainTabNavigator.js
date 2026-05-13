@@ -3,6 +3,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, Text, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FontAwesome5 } from '@expo/vector-icons';
 import * as notificationsApi from '../api/notifications';
 
 import HomeScreen from '../screens/home/HomeScreen';
@@ -29,9 +31,14 @@ import colors from '../styles/colors';
 const Tab = createBottomTabNavigator();
 const ProfileStack = createNativeStackNavigator();
 
-const TabIcon = ({ name, focused, count }) => (
+const TabIcon = ({ name, focused, count, color }) => (
   <View>
-    <Text style={[styles.icon, focused && styles.iconFocused]}>{name}</Text>
+    <FontAwesome5 
+      name={name} 
+      size={22} 
+      color={color || (focused ? colors.primary : colors.textMuted)}
+      style={focused && styles.iconFocused}
+    />
     {count > 0 && (
       <View style={styles.badge}>
         <Text style={styles.badgeText}>{count > 99 ? '99+' : count}</Text>
@@ -120,6 +127,7 @@ const ProfileStackNavigator = () => {
 
 const MainTabNavigator = () => {
   const { chatUnreadCount } = useNotifications();
+  const insets = useSafeAreaInsets();
 
   return (
     <Tab.Navigator
@@ -135,7 +143,7 @@ const MainTabNavigator = () => {
         name="Home"
         component={HomeScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon name="🏠" focused={focused} />,
+          tabBarIcon: ({ focused, color }) => <TabIcon name="home" focused={focused} color={color} />,
           tabBarLabel: 'Home',
         }}
       />
@@ -143,7 +151,7 @@ const MainTabNavigator = () => {
         name="Messages"
         component={ChatListScreen}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon name="💬" focused={focused} count={chatUnreadCount} />,
+          tabBarIcon: ({ focused, color }) => <TabIcon name="comment-dots" focused={focused} count={chatUnreadCount} color={color} />,
           tabBarLabel: 'Messages',
         }}
       />
@@ -151,7 +159,7 @@ const MainTabNavigator = () => {
         name="Profile"
         component={ProfileStackNavigator}
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon name="👤" focused={focused} />,
+          tabBarIcon: ({ focused, color }) => <TabIcon name="user-alt" focused={focused} color={color} />,
           tabBarLabel: 'Profile',
         }}
       />
@@ -164,8 +172,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopColor: colors.border,
     borderTopWidth: 1,
-    height: 65,
-    paddingBottom: 8,
     paddingTop: 8,
     paddingHorizontal: 20,
   },

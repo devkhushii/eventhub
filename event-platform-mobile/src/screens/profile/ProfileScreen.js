@@ -7,22 +7,24 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import Card from '../../components/Card';
 import colors from '../../styles/colors';
 import { getInitials } from '../../utils/helpers';
 import * as vendorsApi from '../../api/vendors';
+import { FontAwesome5 } from '@expo/vector-icons';
 
 const MenuItem = ({ title, subtitle, icon, onPress, showArrow = true }) => (
   <TouchableOpacity style={styles.menuItem} onPress={onPress}>
     <View style={styles.menuIconContainer}>
-      <Text style={styles.menuIcon}>{icon}</Text>
+      <FontAwesome5 name={icon} size={18} color={colors.primary} />
     </View>
     <View style={styles.menuContent}>
       <Text style={styles.menuTitle}>{title}</Text>
       {subtitle && <Text style={styles.menuSubtitle}>{subtitle}</Text>}
     </View>
-    {showArrow && <Text style={styles.menuArrow}>›</Text>}
+    {showArrow && <FontAwesome5 name="chevron-right" size={16} color={colors.textMuted} />}
   </TouchableOpacity>
 );
 
@@ -73,35 +75,35 @@ const ProfileScreen = ({ navigation }) => {
         <MenuItem
           title="Dashboard"
           subtitle="Overview and stats"
-          icon="📊"
+          icon="chart-bar"
           onPress={() => navigation.navigate('VendorDashboard')}
         />
         <View style={styles.divider} />
         <MenuItem
           title="My Listings"
           subtitle="Manage your listings"
-          icon="🏠"
+          icon="home"
           onPress={() => navigation.navigate('MyListings')}
         />
         <View style={styles.divider} />
         <MenuItem
           title="Create Listing"
           subtitle="Add new listing"
-          icon="➕"
+          icon="plus"
           onPress={() => navigation.navigate('CreateListing')}
         />
         <View style={styles.divider} />
         <MenuItem
           title="Bookings"
           subtitle="Manage bookings"
-          icon="📅"
+          icon="calendar-alt"
           onPress={() => navigation.navigate('VendorBookings')}
         />
         <View style={styles.divider} />
         <MenuItem
           title="Vendor Profile"
           subtitle="Business details"
-          icon="🏪"
+          icon="store"
           onPress={() => navigation.navigate('VendorProfile')}
         />
       </Card>
@@ -117,28 +119,28 @@ const ProfileScreen = ({ navigation }) => {
         <MenuItem
           title="Dashboard"
           subtitle="Platform overview"
-          icon="📊"
+          icon="chart-pie"
           onPress={() => navigation.navigate('AdminDashboard')}
         />
         <View style={styles.divider} />
         <MenuItem
           title="Manage Vendors"
           subtitle="Vendor approvals"
-          icon="🏪"
+          icon="store"
           onPress={() => navigation.navigate('AdminVendors')}
         />
         <View style={styles.divider} />
         <MenuItem
           title="Manage Users"
           subtitle="User management"
-          icon="👥"
+          icon="users"
           onPress={() => navigation.navigate('AdminUsers')}
         />
         <View style={styles.divider} />
         <MenuItem
           title="Manage Listings"
           subtitle="Content moderation"
-          icon="📋"
+          icon="clipboard-list"
           onPress={() => navigation.navigate('AdminListings')}
         />
       </Card>
@@ -154,7 +156,7 @@ const ProfileScreen = ({ navigation }) => {
         <MenuItem
           title="My Bookings"
           subtitle="View your bookings"
-          icon="📅"
+          icon="calendar-alt"
           onPress={() => navigation.navigate('UserBookings')}
         />
       </Card>
@@ -162,7 +164,8 @@ const ProfileScreen = ({ navigation }) => {
   );
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={styles.outerContainer} edges={['top']}>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
         <View style={styles.avatarContainer}>
           <View style={styles.avatar}>
@@ -203,7 +206,7 @@ const ProfileScreen = ({ navigation }) => {
               style={styles.quickAction}
               onPress={() => navigation.navigate(isVendor ? 'VendorDashboard' : 'AdminDashboard')}
             >
-              <Text style={styles.quickActionIcon}>🚀</Text>
+              <FontAwesome5 name="rocket" size={24} color={colors.textLight} style={{ marginRight: 12 }} />
               <Text style={styles.quickActionText}>
                 {isVendor ? 'Vendor Panel' : 'Admin Panel'}
               </Text>
@@ -222,7 +225,7 @@ const ProfileScreen = ({ navigation }) => {
           <MenuItem
             title="Payment History"
             subtitle="View transactions"
-            icon="💳"
+            icon="credit-card"
             onPress={() => navigation.navigate('PaymentHistory')}
           />
         </Card>
@@ -234,7 +237,7 @@ const ProfileScreen = ({ navigation }) => {
             </View>
             <Card style={styles.menuCard}>
               <View style={styles.pendingStatusCard}>
-                <Text style={styles.pendingStatusIcon}>⏳</Text>
+                <FontAwesome5 name="hourglass-half" size={40} color={colors.warning} style={{ marginBottom: 12 }} />
                 <Text style={styles.pendingStatusTitle}>Application Pending</Text>
                 <Text style={styles.pendingStatusText}>
                   Your vendor application is under review. You'll be notified once approved.
@@ -253,7 +256,7 @@ const ProfileScreen = ({ navigation }) => {
               <MenuItem
                 title="Retry Application"
                 subtitle="Your previous application was rejected"
-                icon="🔄"
+                icon="sync-alt"
                 onPress={() => navigation.navigate('BecomeVendor')}
               />
             </Card>
@@ -269,7 +272,7 @@ const ProfileScreen = ({ navigation }) => {
               <MenuItem
                 title="Become a Vendor"
                 subtitle="Start listing your services"
-                icon="🏪"
+                icon="store"
                 onPress={() => navigation.navigate('BecomeVendor')}
               />
             </Card>
@@ -283,14 +286,14 @@ const ProfileScreen = ({ navigation }) => {
           <MenuItem
             title="Help Center"
             subtitle="Get help and support"
-            icon="❓"
+            icon="question-circle"
             onPress={() => {}}
           />
           <View style={styles.divider} />
           <MenuItem
             title="Terms & Privacy"
             subtitle="Legal information"
-            icon="📜"
+            icon="file-contract"
             onPress={() => {}}
           />
         </Card>
@@ -301,19 +304,24 @@ const ProfileScreen = ({ navigation }) => {
 
         <Text style={styles.versionText}>Version 1.0.0</Text>
       </View>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  outerContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#FFFFFF',
   },
   header: {
     alignItems: 'center',
     padding: 24,
-    backgroundColor: colors.surface,
+    backgroundColor: '#FFFFFF',
     borderBottomLeftRadius: 32,
     borderBottomRightRadius: 32,
   },
@@ -325,12 +333,12 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: colors.primary,
+    backgroundColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarText: {
-    color: colors.textLight,
+    color: '#FFFFFF',
     fontSize: 36,
     fontWeight: 'bold',
   },
@@ -338,13 +346,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     right: -8,
-    backgroundColor: colors.success,
+    backgroundColor: '#000000',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
   pendingBadge: {
-    backgroundColor: colors.warning,
+    backgroundColor: '#666666',
   },
   vendorBadgeText: {
     color: colors.textLight,
@@ -355,13 +363,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     right: -8,
-    backgroundColor: colors.warning,
+    backgroundColor: '#000000',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
   adminBadgeText: {
-    color: colors.text,
+    color: '#FFFFFF',
     fontSize: 10,
     fontWeight: '600',
   },
@@ -380,10 +388,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 20,
-    backgroundColor: colors.primary + '15',
+    backgroundColor: '#EEEEEE',
   },
   editButtonText: {
-    color: colors.primary,
+    color: colors.success,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -396,7 +404,7 @@ const styles = StyleSheet.create({
   quickAction: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.success,
     padding: 16,
     borderRadius: 16,
   },
@@ -416,7 +424,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.textSecondary,
+    color: '#666666',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -448,7 +456,7 @@ const styles = StyleSheet.create({
   menuTitle: {
     fontSize: 15,
     fontWeight: '600',
-    color: colors.text,
+    color: '#000000',
   },
   menuSubtitle: {
     fontSize: 12,
@@ -468,13 +476,13 @@ const styles = StyleSheet.create({
     marginTop: 24,
     padding: 16,
     borderRadius: 16,
-    backgroundColor: colors.error + '15',
+    backgroundColor: '#EEEEEE',
     alignItems: 'center',
   },
   logoutButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.error,
+    color: colors.success,
   },
   versionText: {
     textAlign: 'center',
@@ -494,7 +502,7 @@ const styles = StyleSheet.create({
   pendingStatusTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.warning,
+    color: '#000000',
     marginBottom: 8,
   },
   pendingStatusText: {

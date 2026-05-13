@@ -15,6 +15,7 @@ import LoadingScreen from '../../components/LoadingScreen';
 import colors from '../../styles/colors';
 import { formatDate, formatCurrency } from '../../utils/helpers';
 import { useAuth } from '../../contexts/AuthContext';
+import { FontAwesome5 } from '@expo/vector-icons';
 
 const POLLING_INTERVAL_MS = 8000;
 
@@ -253,7 +254,7 @@ const BookingDetailScreen = ({ navigation, route }) => {
     const status = booking.status?.toUpperCase();
     // When advance is paid and awaiting final, show confirmed context
     if (status === 'AWAITING_FINAL_PAYMENT' && booking.advance_paid) {
-      return 'Booking Confirmed 🎉 - Pay Remaining';
+      return 'Booking Confirmed - Pay Remaining';
     }
     return STATUS_LABELS[status] || booking.status || 'Unknown';
   };
@@ -310,20 +311,20 @@ const BookingDetailScreen = ({ navigation, route }) => {
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Total Price</Text>
-            <Text style={styles.detailValue}>{formatCurrency(booking.total_price)}</Text>
+            <Text style={styles.priceValue}>{formatCurrency(booking.total_price)}</Text>
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Advance Amount</Text>
-            <Text style={styles.detailValue}>
+            <Text style={styles.priceValue}>
               {booking.advance_paid
-                ? `${formatCurrency(booking.advance_amount)} ✅ Paid`
+                ? <><FontAwesome5 name="check-circle" size={14} color={colors.success} /> {formatCurrency(booking.advance_amount)} Paid</>
                 : (formatCurrency(booking.advance_amount) || 'Not paid yet')}
             </Text>
           </View>
           {booking.remaining_amount !== undefined && (
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Remaining Amount</Text>
-              <Text style={styles.detailValue}>{formatCurrency(booking.remaining_amount) || 'N/A'}</Text>
+              <Text style={styles.priceValue}>{formatCurrency(booking.remaining_amount) || 'N/A'}</Text>
             </View>
           )}
           {booking.special_requests && (
@@ -430,6 +431,13 @@ const styles = StyleSheet.create({
   },
   detailValue: {
     color: colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'right',
+  },
+  priceValue: {
+    color: colors.success,
     fontSize: 14,
     fontWeight: '600',
     flex: 1,

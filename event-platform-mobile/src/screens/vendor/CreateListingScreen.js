@@ -14,15 +14,16 @@ import Input from '../../components/Input';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import colors from '../../styles/colors';
+import { FontAwesome5 } from '@expo/vector-icons';
 
 const LISTING_TYPES = [
-  { value: 'VENUE', label: 'Venue', icon: '🏠' },
-  { value: 'DJ', label: 'DJ/Music', icon: '🎵' },
-  { value: 'CATERER', label: 'Catering', icon: '🍽️' },
-  { value: 'DECORATOR', label: 'Decorator', icon: '🎨' },
-  { value: 'PHOTOGRAPHER', label: 'Photographer', icon: '📸' },
-  { value: 'EVENT_MANAGER', label: 'Event Manager', icon: '📋' },
-  { value: 'OTHER', label: 'Other', icon: '✨' },
+  { value: 'VENUE', label: 'Venue', icon: 'home' },
+  { value: 'DJ', label: 'DJ/Music', icon: 'music' },
+  { value: 'CATERER', label: 'Catering', icon: 'utensils' },
+  { value: 'DECORATOR', label: 'Decorator', icon: 'paint-brush' },
+  { value: 'PHOTOGRAPHER', label: 'Photographer', icon: 'camera' },
+  { value: 'EVENT_MANAGER', label: 'Event Manager', icon: 'clipboard-list' },
+  { value: 'OTHER', label: 'Other', icon: 'star' },
 ];
 
 const STATUS_OPTIONS = [
@@ -146,10 +147,10 @@ const CreateListingScreen = ({ navigation }) => {
               onPress={() => setShowTypePicker(!showTypePicker)}
             >
               <View style={styles.dropdownContent}>
-                <Text style={styles.dropdownIcon}>{selectedType?.icon}</Text>
+                <FontAwesome5 name={selectedType?.icon || 'list'} size={20} color={colors.textSecondary} style={styles.dropdownIcon} />
                 <Text style={styles.dropdownText}>{selectedType?.label}</Text>
               </View>
-              <Text style={styles.dropdownArrow}>{showTypePicker ? '▲' : '▼'}</Text>
+              <FontAwesome5 name={showTypePicker ? 'chevron-up' : 'chevron-down'} size={12} color={colors.textSecondary} />
             </TouchableOpacity>
 
             {showTypePicker && (
@@ -166,7 +167,7 @@ const CreateListingScreen = ({ navigation }) => {
                       setShowTypePicker(false);
                     }}
                   >
-                    <Text style={styles.pickerIcon}>{type.icon}</Text>
+                    <FontAwesome5 name={type.icon} size={18} color={form.listing_type === type.value ? colors.primary : colors.textSecondary} style={styles.pickerIcon} />
                     <Text style={[
                       styles.pickerText,
                       form.listing_type === type.value && styles.pickerTextActive,
@@ -183,7 +184,7 @@ const CreateListingScreen = ({ navigation }) => {
           
           <Card style={styles.card}>
             <Input
-              label="Price ($)"
+              label="Price (₹)"
               value={form.price}
               onChangeText={(value) => updateForm('price', value)}
               placeholder="0.00"
@@ -288,17 +289,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dropdownIcon: {
-    fontSize: 20,
     marginRight: 12,
   },
   dropdownText: {
     fontSize: 16,
     fontWeight: '500',
     color: colors.text,
-  },
-  dropdownArrow: {
-    fontSize: 12,
-    color: colors.textSecondary,
   },
   pickerContainer: {
     marginTop: 8,
@@ -317,7 +313,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary + '15',
   },
   pickerIcon: {
-    fontSize: 18,
     marginRight: 12,
   },
   pickerText: {

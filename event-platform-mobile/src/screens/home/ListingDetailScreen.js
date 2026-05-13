@@ -9,10 +9,12 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as listingsApi from '../../api/listings';
 import * as bookingsApi from '../../api/bookings';
 import * as reviewsApi from '../../api/reviews';
 import * as chatApi from '../../api/chat';
+import { FontAwesome5 } from '@expo/vector-icons';
 import Button from '../../components/Button';
 import LoadingScreen from '../../components/LoadingScreen';
 import ReviewCard from '../../components/ReviewCard';
@@ -27,6 +29,7 @@ const ListingDetailScreen = ({ navigation, route }) => {
   const [loading, setLoading] = useState(true);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const fetchListing = async () => {
     try {
@@ -119,7 +122,10 @@ const ListingDetailScreen = ({ navigation, route }) => {
           <Text style={styles.title}>{listing.title}</Text>
           
           {listing.location && (
-            <Text style={styles.location}>📍 {listing.location}</Text>
+            <View style={styles.locationContainer}>
+              <FontAwesome5 name="map-marker-alt" size={14} color={colors.textSecondary} style={styles.locationIcon} />
+              <Text style={styles.location}>{listing.location}</Text>
+            </View>
           )}
 
           <Text style={styles.price}>{formatCurrency(listing.price)}</Text>
@@ -159,7 +165,7 @@ const ListingDetailScreen = ({ navigation, route }) => {
         </View>
       </ScrollView>
 
-      <View style={styles.bottomActions}>
+      <View style={[styles.bottomActions, { paddingBottom: Math.max(16, insets.bottom) }]}>
         <TouchableOpacity 
           style={[styles.chatButton, chatLoading && styles.chatButtonDisabled]} 
           onPress={handleChat}
@@ -169,7 +175,7 @@ const ListingDetailScreen = ({ navigation, route }) => {
             <ActivityIndicator size="small" color={colors.primary} />
           ) : (
             <>
-              <Text style={styles.chatButtonIcon}>💬</Text>
+              <FontAwesome5 name="comment-dots" size={18} color={colors.text} style={styles.chatButtonIcon} />
               <Text style={styles.chatButtonText}>Chat</Text>
             </>
           )}
@@ -224,15 +230,22 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 8,
   },
+  locationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  locationIcon: {
+    marginRight: 6,
+  },
   location: {
     fontSize: 14,
     color: colors.textSecondary,
-    marginBottom: 12,
   },
   price: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: colors.primary,
+    color: colors.success,
     marginBottom: 16,
   },
   section: {
@@ -258,7 +271,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   badgeText: {
-    color: colors.text,
+    color: colors.textLight,
     fontSize: 12,
     fontWeight: '600',
     textTransform: 'uppercase',
@@ -301,7 +314,6 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   chatButtonIcon: {
-    fontSize: 18,
     marginRight: 8,
   },
   chatButtonText: {
