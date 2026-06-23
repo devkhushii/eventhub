@@ -3,7 +3,7 @@
 # Safe to run multiple times - handles existing data gracefully
 
 import random
-from faker import Faker
+from typing import Any
 from datetime import datetime, timedelta, timezone
 
 from app.db.session import SessionLocal
@@ -16,7 +16,6 @@ from app.modules.auth.models import (
     PasswordResetToken,
 )
 from app.modules.notifications.models import Notification
-
 from app.modules.vendors.models import Vendor, VendorType, VerificationStatus
 from app.modules.listings.models import (
     Listing,
@@ -36,7 +35,6 @@ from app.modules.payments.models import (
 )
 from app.modules.chat.models import ChatRoom, Message
 from app.core.security import hash_password
-from app.modules.notifications.models import Notification
 
 fake = Faker()
 
@@ -120,7 +118,7 @@ CITIES = [
 # --- HELPER FUNCTIONS ---
 
 
-def get_random_safe(items: list) -> any:
+def get_random_safe(items: list) -> Any:
     """Safely get a random item from a list."""
     if not items:
         return None
@@ -399,7 +397,6 @@ def create_bookings(users, listings, n=60):
             listing_id=listing.id,
             event_date=event_date,
             end_date=end_date,
-            total_days=total_days,
             total_price=round(total_price, 2),
             status=status,
             advance_amount=advance_amount if random.choice([True, False]) else None,
