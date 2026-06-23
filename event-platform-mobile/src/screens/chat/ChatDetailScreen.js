@@ -11,6 +11,8 @@ import {
   ActivityIndicator,
   DeviceEventEmitter,
 } from 'react-native';
+import { FontAwesome5 } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import notifee from '@notifee/react-native';
 import { useRoute, useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as chatApi from '../../api/chat';
@@ -28,6 +30,7 @@ const ChatDetailScreen = () => {
   const { chatId, chatName, fromNotification } = route.params || {};
   const { user } = useAuth();
   const { decrementChatUnreadCount } = useNotifications();
+  const insets = useSafeAreaInsets();
   
   console.log('[Chat] ChatDetailScreen rendered');
   console.log('[Chat]   chatId:', chatId);
@@ -407,7 +410,7 @@ const ChatDetailScreen = () => {
                 {formatTime(item.created_at)}
               </Text>
               {isMe && item.isOptimistic && (
-                <Text style={styles.pendingIndicator}> ⏳</Text>
+                <FontAwesome5 name="clock" size={10} color="rgba(255,255,255,0.7)" style={styles.pendingIndicator} />
               )}
             </View>
           </View>
@@ -471,7 +474,7 @@ const ChatDetailScreen = () => {
         showsVerticalScrollIndicator={false}
       />
       
-      <View style={styles.inputContainer}>
+      <View style={[styles.inputContainer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
         <TextInput
           style={styles.input}
           value={newMessage}

@@ -9,6 +9,7 @@ import {
   Alert,
   TouchableOpacity,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import Input from '../../components/Input';
 import Button from '../../components/Button';
@@ -62,10 +63,11 @@ const LoginScreen = ({ navigation }) => {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <SafeAreaView style={styles.safeArea}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <Text style={styles.title}>Event Platform</Text>
@@ -114,14 +116,19 @@ const LoginScreen = ({ navigation }) => {
           </View>
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#FFFFFF',
   },
   scrollContent: {
     flexGrow: 1,
@@ -135,12 +142,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: colors.text,
+    color: '#000000',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: colors.textSecondary,
+    color: '#666666',
   },
   form: {
     width: '100%',
@@ -150,24 +157,27 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   forgotPasswordText: {
-    color: colors.primary,
+    color: '#000000',
     fontSize: 14,
+    textDecorationLine: 'underline',
   },
   button: {
     marginBottom: 24,
+    backgroundColor: colors.success,
   },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
   },
   footerText: {
-    color: colors.textSecondary,
+    color: '#000000',
     fontSize: 14,
   },
   linkText: {
-    color: colors.primary,
+    color: '#000000',
     fontSize: 14,
     fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 });
 

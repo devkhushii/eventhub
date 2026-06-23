@@ -1,10 +1,13 @@
+import './global.css';
 import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from './src/contexts/AuthContext';
 import { NotificationProvider } from './src/contexts/NotificationContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { openChat } from './src/utils/navigationService';
+
 
 export default function App() {
   useEffect(() => {
@@ -41,11 +44,13 @@ export default function App() {
   }, []);
 
   return (
-    <AuthProvider>
-      <NotificationProvider>
-        <StatusBar style="light" />
-        <AppNavigator />
-      </NotificationProvider>
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <NotificationProvider>
+          <StatusBar style="light" />
+          <AppNavigator />
+        </NotificationProvider>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }

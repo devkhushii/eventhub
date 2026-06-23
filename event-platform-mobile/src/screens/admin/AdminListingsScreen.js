@@ -91,7 +91,7 @@ const AdminListingsScreen = () => {
       <Card style={styles.listingCard}>
         <View style={styles.listingInfo}>
           <Text style={styles.listingTitle}>{item.title || 'Untitled'}</Text>
-          <Text style={styles.listingPrice}>${item.price || 0}</Text>
+          <Text style={styles.listingPrice}>₹{item.price || 0}</Text>
           <Text style={styles.listingType}>{item.listing_type || 'N/A'}</Text>
           <View style={styles.listingMeta}>
             <Text style={[styles.statusBadge, status.style]}>
@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
   listingPrice: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.success,
     marginBottom: 2,
   },
   listingType: {

@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
   amount: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: colors.primary,
+    color: colors.success,
   },
   date: {
     color: colors.textMuted,

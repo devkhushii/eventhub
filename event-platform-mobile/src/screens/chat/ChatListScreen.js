@@ -9,6 +9,7 @@ import {
   AppState,
   DeviceEventEmitter,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import * as chatApi from '../../api/chat';
 import { useAuth } from '../../contexts/AuthContext';
@@ -314,7 +315,7 @@ const ChatListScreen = ({ navigation }) => {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.title}>Messages</Text>
       </View>
@@ -337,7 +338,7 @@ const ChatListScreen = ({ navigation }) => {
           />
         }
       />
-    </View>
+    </SafeAreaView>
   );
 };
 

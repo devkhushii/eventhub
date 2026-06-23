@@ -9,13 +9,17 @@ import {
   Platform,
   Modal,
   Animated,
+  TouchableOpacity,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Calendar } from 'react-native-calendars';
 import * as bookingsApi from '../../api/bookings';
 import Input from '../../components/Input';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import { colors, shadows, borderRadius } from '../../styles/colors';
 import { formatCurrency, getImageSource } from '../../utils/helpers';
+import { FontAwesome5 } from '@expo/vector-icons';
 
 const SuccessModal = ({ visible, onClose }) => {
   const scaleAnim = React.useRef(new Animated.Value(0)).current;
@@ -47,9 +51,9 @@ const SuccessModal = ({ visible, onClose }) => {
       <View style={styles.modalOverlay}>
         <Animated.View style={[styles.modalContent, { transform: [{ scale: scaleAnim }] }]}>
           <View style={styles.successIconContainer}>
-            <Animated.Text style={[styles.successIcon, { opacity: checkmarkAnim }]}>
-              ✅
-            </Animated.Text>
+            <Animated.View style={{ opacity: checkmarkAnim }}>
+              <FontAwesome5 name="check" size={40} color={colors.success} />
+            </Animated.View>
           </View>
           <Text style={styles.modalTitle}>Request Sent!</Text>
           <Text style={styles.modalMessage}>
@@ -76,6 +80,9 @@ const CreateBookingScreen = ({ navigation, route }) => {
   const [errors, setErrors] = useState({});
   const [bookingCreated, setBookingCreated] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [calendarMode, setCalendarMode] = useState('start');
+  const insets = useSafeAreaInsets();
 
   const imageSource = listing 
     ? getImageSource(listing.images?.[0]?.image_url || listing.image_url)
@@ -196,7 +203,7 @@ const CreateBookingScreen = ({ navigation, route }) => {
               <Text style={styles.listingTitle}>{listing.title}</Text>
               {listing.location && (
                 <View style={styles.locationRow}>
-                  <Text style={styles.locationIcon}>📍</Text>
+                  <FontAwesome5 name="map-marker-alt" size={14} color={colors.textSecondary} style={styles.locationIcon} />
                   <Text style={styles.listingLocation}>{listing.location}</Text>
                 </View>
               )}
@@ -210,23 +217,34 @@ const CreateBookingScreen = ({ navigation, route }) => {
 
         <View style={styles.formSection}>
           <Text style={styles.sectionTitle}>Event Details</Text>
-          
-          <Input
-            label="Event Date"
-            value={eventDate}
-            onChangeText={setEventDate}
-            placeholder="YYYY-MM-DD"
-            error={errors.eventDate}
-            editable={!bookingCreated && !loading}
-          />
+          <TouchableOpacity 
+            onPress={() => { setCalendarMode('start'); setShowCalendar(true); }}
+            disabled={bookingCreated || loading}
+          >
+            <View pointerEvents="none">
+              <Input
+                label="Event Date"
+                value={eventDate}
+                placeholder="Select Event Date"
+                error={errors.eventDate}
+                rightIcon={<FontAwesome5 name="calendar-alt" size={16} color={colors.textSecondary} />}
+              />
+            </View>
+          </TouchableOpacity>
 
-          <Input
-            label="End Date (Optional)"
-            value={endDate}
-            onChangeText={setEndDate}
-            placeholder="YYYY-MM-DD"
-            editable={!bookingCreated && !loading}
-          />
+          <TouchableOpacity 
+            onPress={() => { setCalendarMode('end'); setShowCalendar(true); }}
+            disabled={bookingCreated || loading}
+          >
+            <View pointerEvents="none">
+              <Input
+                label="End Date (Optional)"
+                value={endDate}
+                placeholder="Select End Date"
+                rightIcon={<FontAwesome5 name="calendar-alt" size={16} color={colors.textSecondary} />}
+              />
+            </View>
+          </TouchableOpacity>
 
           <Input
             label="Special Requests"
@@ -240,7 +258,7 @@ const CreateBookingScreen = ({ navigation, route }) => {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(24, insets.bottom) }]}>
         <View style={styles.priceBreakdown}>
           <View style={styles.priceRowCalc}>
             <Text style={styles.priceLabelCalc}>
@@ -269,6 +287,44 @@ const CreateBookingScreen = ({ navigation, route }) => {
         visible={showSuccessModal} 
         onClose={handleSuccessClose}
       />
+
+      <Modal visible={showCalendar} transparent animationType="fade">
+        <View style={styles.calendarModalOverlay}>
+          <View style={styles.calendarModalContent}>
+            <View style={styles.calendarModalHeader}>
+              <Text style={styles.calendarModalTitle}>
+                {calendarMode === 'start' ? 'Select Event Date' : 'Select End Date'}
+              </Text>
+              <TouchableOpacity onPress={() => setShowCalendar(false)}>
+                <FontAwesome5 name="times" size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <Calendar
+              current={calendarMode === 'start' ? eventDate : (endDate || eventDate || undefined)}
+              minDate={calendarMode === 'end' && eventDate ? eventDate : new Date().toISOString().split('T')[0]}
+              onDayPress={(day) => {
+                if (calendarMode === 'start') {
+                  setEventDate(day.dateString);
+                  if (endDate && day.dateString > endDate) {
+                    setEndDate('');
+                  }
+                } else {
+                  setEndDate(day.dateString);
+                }
+                setShowCalendar(false);
+              }}
+              theme={{
+                todayTextColor: colors.primary,
+                selectedDayBackgroundColor: colors.primary,
+                arrowColor: colors.primary,
+              }}
+              markedDates={{
+                [calendarMode === 'start' ? eventDate : endDate]: { selected: true, selectedColor: colors.primary },
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -305,7 +361,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   locationIcon: {
-    fontSize: 14,
     marginRight: 6,
   },
   listingLocation: {
@@ -329,7 +384,7 @@ const styles = StyleSheet.create({
   listingPrice: {
     fontSize: 24,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.success,
   },
   formSection: {
     padding: 20,
@@ -382,7 +437,7 @@ const styles = StyleSheet.create({
   footerPrice: {
     fontSize: 28,
     fontWeight: '700',
-    color: colors.text,
+    color: colors.success,
   },
   modalOverlay: {
     flex: 1,
@@ -408,9 +463,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
-  successIcon: {
-    fontSize: 40,
-  },
   modalTitle: {
     fontSize: 24,
     fontWeight: '700',
@@ -424,6 +476,29 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 24,
+  },
+  calendarModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  calendarModalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.large,
+    padding: 20,
+    ...shadows.large,
+  },
+  calendarModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  calendarModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.text,
   },
 });
 

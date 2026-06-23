@@ -12,6 +12,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../contexts/AuthContext';
 import * as vendorsApi from '../../api/vendors';
 import * as listingsApi from '../../api/listings';
+import { FontAwesome5 } from '@expo/vector-icons';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
 import LoadingScreen from '../../components/LoadingScreen';
@@ -66,7 +67,7 @@ const VendorDashboardScreen = ({ navigation }) => {
   const StatCard = ({ title, value, icon, color }) => (
     <Card style={styles.statCard}>
       <View style={styles.statHeader}>
-        <Text style={styles.statIcon}>{icon}</Text>
+        <FontAwesome5 name={icon} size={16} color={color} style={styles.statIcon} />
         <Text style={styles.statTitle}>{title}</Text>
       </View>
       <Text style={[styles.statValue, { color }]}>{value}</Text>
@@ -75,12 +76,12 @@ const VendorDashboardScreen = ({ navigation }) => {
 
   const ActionCard = ({ title, subtitle, icon, onPress }) => (
     <TouchableOpacity style={styles.actionCard} onPress={onPress}>
-      <Text style={styles.actionIcon}>{icon}</Text>
+      <FontAwesome5 name={icon} size={20} color={colors.primary} style={styles.actionIcon} />
       <View style={styles.actionContent}>
         <Text style={styles.actionTitle}>{title}</Text>
         <Text style={styles.actionSubtitle}>{subtitle}</Text>
       </View>
-      <Text style={styles.actionArrow}>›</Text>
+      <FontAwesome5 name="chevron-right" size={20} color={colors.textSecondary} style={styles.actionArrow} />
     </TouchableOpacity>
   );
 
@@ -102,25 +103,25 @@ const VendorDashboardScreen = ({ navigation }) => {
             <StatCard
               title="Total Bookings"
               value={dashboard.total_bookings || 0}
-              icon="📅"
+              icon="calendar-alt"
               color={colors.primary}
             />
             <StatCard
               title="Confirmed"
               value={dashboard.confirmed_bookings || 0}
-              icon="✅"
+              icon="check-circle"
               color={colors.success}
             />
             <StatCard
               title="Pending"
               value={dashboard.pending_bookings || 0}
-              icon="⏳"
+              icon="hourglass-half"
               color={colors.warning}
             />
             <StatCard
               title="Revenue"
               value={formatCurrency(dashboard.revenue || 0)}
-              icon="💰"
+              icon="coins"
               color={colors.success}
             />
           </View>
@@ -145,19 +146,19 @@ const VendorDashboardScreen = ({ navigation }) => {
         <ActionCard
           title="Create Listing"
           subtitle="Add a new listing"
-          icon="➕"
+          icon="plus"
           onPress={() => navigation.navigate('CreateListing')}
         />
         <ActionCard
           title="My Listings"
           subtitle="Manage your listings"
-          icon="🏠"
+          icon="home"
           onPress={() => navigation.navigate('MyListings')}
         />
         <ActionCard
           title="Bookings"
           subtitle="View all bookings"
-          icon="📋"
+          icon="clipboard-list"
           onPress={() => navigation.navigate('VendorBookings')}
         />
       </View>
@@ -198,7 +199,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   statIcon: {
-    fontSize: 20,
     marginRight: 8,
   },
   statTitle: {
@@ -238,7 +238,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   actionIcon: {
-    fontSize: 24,
     marginRight: 12,
   },
   actionContent: {
@@ -255,8 +254,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   actionArrow: {
-    fontSize: 24,
-    color: colors.textSecondary,
   },
   bottomPadding: {
     height: 24,

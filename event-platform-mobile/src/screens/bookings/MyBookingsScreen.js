@@ -15,6 +15,7 @@ import BookingCard from '../../components/BookingCard';
 import LoadingScreen from '../../components/LoadingScreen';
 import EmptyState from '../../components/EmptyState';
 import { colors, borderRadius } from '../../styles/colors';
+import { FontAwesome5 } from '@expo/vector-icons';
 
 const POLLING_INTERVAL_MS = 10000;
 const VALID_SUCCESS_STATUSES = ['CONFIRMED', 'COMPLETED'];
@@ -23,42 +24,42 @@ const FAILURE_STATUSES = ['CANCELLED', 'REJECTED'];
 const PAYMENT_BUTTON_STATES = {
   PENDING: {
     label: 'Pay Now',
-    icon: '💳',
+    icon: 'credit-card',
     color: colors.primary,
   },
   APPROVED: {
     label: 'Pay Now',
-    icon: '💳',
+    icon: 'credit-card',
     color: colors.primary,
   },
   AWAITING_ADVANCE: {
     label: 'Pay Advance',
-    icon: '💳',
+    icon: 'credit-card',
     color: colors.primary,
   },
   CONFIRMED: {
     label: 'Pay Remaining',
-    icon: '💰',
+    icon: 'coins',
     color: colors.primary,
   },
   AWAITING_FINAL_PAYMENT: {
-    label: 'Confirmed ✅ Pay Remaining',
-    icon: '💰',
+    label: 'Confirmed Pay Remaining',
+    icon: 'coins',
     color: colors.primary,
   },
   COMPLETED: {
     label: 'Completed',
-    icon: '🎉',
+    icon: 'check-circle',
     color: colors.success,
   },
   CANCELLED: {
     label: 'Cancelled',
-    icon: '❌',
+    icon: 'times-circle',
     color: colors.error,
   },
   REJECTED: {
     label: 'Rejected',
-    icon: '❌',
+    icon: 'times-circle',
     color: colors.error,
   },
 };
@@ -287,7 +288,7 @@ const MyBookingsScreen = ({ navigation }) => {
             disabled={isPaymentProcessing || item.status === 'COMPLETED'}
             activeOpacity={0.8}
           >
-            <Text style={styles.paymentButtonIcon}>{paymentConfig.icon}</Text>
+            <FontAwesome5 name={paymentConfig.icon} size={16} color="#fff" style={styles.paymentButtonIcon} />
             <Text style={styles.paymentButtonText}>{paymentConfig.label}</Text>
           </TouchableOpacity>
         )}
@@ -392,7 +393,6 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   paymentButtonIcon: {
-    fontSize: 16,
     marginRight: 8,
   },
   paymentButtonText: {

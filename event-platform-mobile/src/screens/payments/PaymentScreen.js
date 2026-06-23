@@ -757,7 +757,7 @@ const styles = StyleSheet.create({
   summaryValueLarge: {
     fontSize: 28,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.success,
   },
   divider: {
     height: 1,
@@ -772,7 +772,7 @@ const styles = StyleSheet.create({
   paymentAmount: {
     fontSize: 24,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.success,
   },
   infoCard: {
     flexDirection: 'row',
@@ -822,7 +822,7 @@ const styles = StyleSheet.create({
   checkoutAmount: {
     fontSize: 20,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.success,
   },
   paymentLinkContainer: {
     backgroundColor: colors.surfaceLight,

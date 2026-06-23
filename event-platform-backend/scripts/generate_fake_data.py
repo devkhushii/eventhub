@@ -333,7 +333,7 @@ def add_listing_images(listings):
         for _ in range(image_count):
             image = ListingImage(
                 listing_id=listing.id,
-                image_url=f"D:/eventhubcelebrato/eventhub/event-platform-backend/uploads/listings/bg12.webp",
+                image_url="https://share.google/mjMSKe4QvxRc2B1Ud",
             )
             db.add(image)
             total_images += 1
