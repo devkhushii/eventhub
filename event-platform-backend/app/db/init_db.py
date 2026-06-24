@@ -9,6 +9,8 @@ import app.modules.reviews.models
 import app.modules.payments.models
 import app.modules.listings.field_models
 import app.modules.chat.models
+import app.modules.notifications.models
+
 
 
 

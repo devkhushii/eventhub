@@ -21,9 +21,14 @@ def is_simulation_mode():
 
 
 def create_order(amount):
+    logger.info(
+        f"[TEMP LOG] [Payment] create_order: amount={amount}, "
+        f"amount_in_paise={amount * 100}"
+    )
     return client.order.create(
         {"amount": amount * 100, "currency": "INR", "payment_capture": 1}
     )
+
 
 
 # UNUSED: Legacy Razorpay payment link flow (app now uses SDK flow)

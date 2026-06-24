@@ -137,6 +137,10 @@ class PaymentService:
                 booking.total_price - (booking.total_price * ADVANCE_PERCENTAGE)
             )
         print(f"[Payment] Expected amount: {expected}")
+        logger.info(
+            f"[TEMP LOG] [Payment] _calculate_expected_amount: booking.total_price={booking.total_price}, "
+            f"payment_type={payment_type}, calculated expected={expected}"
+        )
         return expected
 
     @staticmethod
@@ -184,6 +188,10 @@ class PaymentService:
         logger.info(
             f"[PAYMENT] Amount calculated: {expected_amount} INR (type={payment_type}, "
             f"total_price={booking.total_price})"
+        )
+        logger.info(
+            f"[TEMP LOG] [Payment] create_payment: booking.total_price={booking.total_price}, "
+            f"expected_amount={expected_amount}, passing to create_order: {expected_amount}"
         )
 
         # Step 6: Create Razorpay order (amount in paise = amount * 100)
@@ -272,6 +280,9 @@ class PaymentService:
             f"[VERIFY] Found payment: payment_id={payment.id}, "
             f"current_status={payment.status}, "
             f"booking_id={payment.booking_id}"
+        )
+        logger.info(
+            f"[TEMP LOG] [Payment] verify_payment: Found payment in DB: payment_id={payment.id}, amount={payment.amount}"
         )
 
         # Step 2: Idempotency - check if already verified with same payment ID
@@ -415,13 +426,20 @@ class PaymentService:
             payment_type_label = (
                 "Advance" if payment.payment_type == PaymentType.ADVANCE else "Final"
             )
+            logger.info(
+                f"[TEMP LOG] [Payment] verify_payment (notification): DB payment.amount={payment.amount}, "
+                f"payment_type={payment.payment_type.value}, formatted value for message={payment.amount:.2f}"
+            )
             notification_data = {
                 "user_id": booking.user_id,
                 "type": NotificationType.PAYMENT,
                 "reference_id": booking.id,
                 "title": f"Payment {payment_type_label} Successful",
-                "message": f"Your {payment_type_label.lower()} payment of ₹{payment.amount / 100:.2f} has been processed successfully.",
+                "message": f"Your {payment_type_label.lower()} payment of ₹{payment.amount:.2f} has been processed successfully.",
             }
+            logger.info(
+                f"[TEMP LOG] [Payment] Notification title: '{notification_data['title']}', message: '{notification_data['message']}'"
+            )
             NotificationRepository(db).create_notification(notification_data)
             logger.info(
                 f"[VERIFY] Payment notification created for user {booking.user_id}"
