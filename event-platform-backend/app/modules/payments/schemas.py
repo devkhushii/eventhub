@@ -82,3 +82,58 @@ class BookingPaymentSummary(BaseModel):
     advance_payment_status: Optional[str]
     final_payment_status: Optional[str]
     escrow_status: str
+
+
+class VendorHistorySummary(BaseModel):
+    total_received: float
+    total_refunded: float
+    total_pending_release: float
+    total_earned: float
+
+
+class VendorTransactionResponse(BaseModel):
+    id: str
+    booking_id: UUID
+    booking_display_id: str
+    transaction_type: str
+    amount: float
+    customer_name: str
+    listing_title: str
+    status: str
+    created_at: datetime
+    payment_id: Optional[str] = None
+    escrow_status: Optional[str] = None
+    released_amount: float = 0.0
+    refunded_amount: float = 0.0
+
+
+class VendorPaymentHistoryResponse(BaseModel):
+    summary: VendorHistorySummary
+    transactions: list[VendorTransactionResponse]
+
+
+class CustomerHistorySummary(BaseModel):
+    total_paid: float
+    total_refunded: float
+    total_pending_refunds: float
+    net_spent: float
+
+
+class CustomerTransactionResponse(BaseModel):
+    id: str
+    booking_id: UUID
+    booking_display_id: str
+    transaction_type: str  # ADVANCE_PAYMENT, FINAL_PAYMENT, REFUND_RECEIVED, REFUND_PENDING, BOOKING_CANCELLED
+    amount: float
+    listing_title: str
+    vendor_name: str
+    status: str
+    created_at: datetime
+    payment_id: Optional[str] = None
+    refunded_amount: float = 0.0
+
+
+class CustomerPaymentHistoryResponse(BaseModel):
+    summary: CustomerHistorySummary
+    transactions: list[CustomerTransactionResponse]
+

@@ -161,6 +161,12 @@ const VendorDashboardScreen = ({ navigation }) => {
           icon="clipboard-list"
           onPress={() => navigation.navigate('VendorBookings')}
         />
+        <ActionCard
+          title="Payment History"
+          subtitle="View financial transactions"
+          icon="history"
+          onPress={() => navigation.navigate('VendorPaymentHistory')}
+        />
       </View>
 
       <View style={styles.bottomPadding} />

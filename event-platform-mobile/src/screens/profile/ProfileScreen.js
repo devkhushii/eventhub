@@ -226,7 +226,7 @@ const ProfileScreen = ({ navigation }) => {
             title="Payment History"
             subtitle="View transactions"
             icon="credit-card"
-            onPress={() => navigation.navigate('PaymentHistory')}
+            onPress={() => navigation.navigate(isVendor ? 'VendorPaymentHistory' : 'PaymentHistory')}
           />
         </Card>
 

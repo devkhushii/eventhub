@@ -10,7 +10,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { getCustomerPaymentHistory } from '../../api/payments';
+import { getVendorPaymentHistory } from '../../api/payments';
 import Card from '../../components/Card';
 import LoadingScreen from '../../components/LoadingScreen';
 import EmptyState from '../../components/EmptyState';
@@ -20,13 +20,13 @@ import { FontAwesome5 } from '@expo/vector-icons';
 
 const FILTER_TABS = [
   { id: 'ALL', label: 'All' },
-  { id: 'PAYMENTS', label: 'Payments' },
-  { id: 'REFUNDS', label: 'Refunds' },
+  { id: 'RECEIVED', label: 'Received' },
+  { id: 'REFUNDED', label: 'Refunded' },
   { id: 'PENDING', label: 'Pending' },
-  { id: 'CANCELLED', label: 'Cancelled' },
+  { id: 'RELEASED', label: 'Released' },
 ];
 
-const PaymentHistoryScreen = ({ navigation }) => {
+const VendorPaymentHistoryScreen = ({ navigation }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -34,12 +34,12 @@ const PaymentHistoryScreen = ({ navigation }) => {
 
   const fetchHistory = async () => {
     try {
-      console.log('[CustomerPaymentHistory] Fetching history from API...');
-      const response = await getCustomerPaymentHistory();
+      console.log('[VendorPaymentHistory] Fetching history from API...');
+      const response = await getVendorPaymentHistory();
       setData(response);
     } catch (error) {
-      console.error('[CustomerPaymentHistory] Failed to fetch payment history:', error);
-      Alert.alert('Error', 'Failed to load customer payment history');
+      console.error('[VendorPaymentHistory] Failed to fetch payment history:', error);
+      Alert.alert('Error', 'Failed to load vendor payment history');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -63,17 +63,17 @@ const PaymentHistoryScreen = ({ navigation }) => {
 
     return data.transactions.filter((tx) => {
       const type = tx.transaction_type;
-      if (activeTab === 'PAYMENTS') {
+      if (activeTab === 'RECEIVED') {
         return type === 'ADVANCE_PAYMENT' || type === 'FINAL_PAYMENT';
       }
-      if (activeTab === 'REFUNDS') {
-        return type === 'REFUND_RECEIVED';
+      if (activeTab === 'REFUNDED') {
+        return type === 'REFUND';
       }
       if (activeTab === 'PENDING') {
-        return type === 'REFUND_PENDING';
+        return type === 'PENDING_SETTLEMENT';
       }
-      if (activeTab === 'CANCELLED') {
-        return type === 'BOOKING_CANCELLED';
+      if (activeTab === 'RELEASED') {
+        return type === 'SETTLEMENT_RELEASED';
       }
       return true;
     });
@@ -83,40 +83,51 @@ const PaymentHistoryScreen = ({ navigation }) => {
     switch (type) {
       case 'ADVANCE_PAYMENT':
         return {
-          title: 'Advance Payment Made',
-          icon: 'arrow-up',
-          iconColor: colors.error,
-          bgColor: colors.error + '15',
-          prefix: '-',
-          textColor: colors.error,
-          badgeLabel: 'Paid',
-          badgeColor: colors.error,
-        };
-      case 'FINAL_PAYMENT':
-        return {
-          title: 'Final Payment Made',
-          icon: 'arrow-up',
-          iconColor: colors.error,
-          bgColor: colors.error + '15',
-          prefix: '-',
-          textColor: colors.error,
-          badgeLabel: 'Paid',
-          badgeColor: colors.error,
-        };
-      case 'REFUND_RECEIVED':
-        return {
-          title: 'Refund Received',
+          title: 'Advance Payment Received',
           icon: 'arrow-down',
           iconColor: colors.success,
           bgColor: colors.success + '15',
           prefix: '+',
           textColor: colors.success,
-          badgeLabel: 'Refunded',
+          badgeLabel: 'Received',
           badgeColor: colors.success,
         };
-      case 'REFUND_PENDING':
+      case 'FINAL_PAYMENT':
         return {
-          title: 'Refund Pending',
+          title: 'Final Payment Received',
+          icon: 'arrow-down',
+          iconColor: colors.success,
+          bgColor: colors.success + '15',
+          prefix: '+',
+          textColor: colors.success,
+          badgeLabel: 'Received',
+          badgeColor: colors.success,
+        };
+      case 'REFUND':
+        return {
+          title: 'Refund Processed',
+          icon: 'arrow-up',
+          iconColor: colors.error,
+          bgColor: colors.error + '15',
+          prefix: '-',
+          textColor: colors.error,
+          badgeLabel: 'Refunded',
+          badgeColor: colors.error,
+        };
+      case 'SETTLEMENT_RELEASED':
+        return {
+          title: 'Settlement Released',
+          icon: 'check-circle',
+          iconColor: colors.success,
+          bgColor: colors.success + '15',
+          prefix: '+',
+          textColor: colors.success,
+          badgeLabel: 'Released',
+          badgeColor: colors.success,
+        };
+      case 'PENDING_SETTLEMENT':
+        return {
+          title: 'Pending Settlement',
           icon: 'clock',
           iconColor: colors.warning,
           bgColor: colors.warning + '15',
@@ -124,17 +135,6 @@ const PaymentHistoryScreen = ({ navigation }) => {
           textColor: colors.warning,
           badgeLabel: 'Pending',
           badgeColor: colors.warning,
-        };
-      case 'BOOKING_CANCELLED':
-        return {
-          title: 'Booking Cancelled',
-          icon: 'times-circle',
-          iconColor: colors.textMuted,
-          bgColor: '#eee',
-          prefix: '',
-          textColor: colors.textSecondary,
-          badgeLabel: 'Cancelled',
-          badgeColor: colors.textMuted,
         };
       default:
         return {
@@ -154,9 +154,10 @@ const PaymentHistoryScreen = ({ navigation }) => {
     if (!dateString) return '';
     try {
       const date = new Date(dateString);
+      // Format: 25 Jun 2026 • 3:18 PM
       const day = date.getDate();
-      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      const month = monthNames[date.getMonth()];
+      const monthNames = ["Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May"];
+      const month = date.toLocaleString('en-US', { month: 'short' });
       const year = date.getFullYear();
       let hours = date.getHours();
       const minutes = date.getMinutes();
@@ -186,9 +187,9 @@ const PaymentHistoryScreen = ({ navigation }) => {
             <Text style={styles.txnTitle}>{config.title}</Text>
             <Text style={styles.bookingId}>Booking ID: {item.booking_display_id}</Text>
             <View style={styles.metaRow}>
-              <Text style={styles.metaText} numberOfLines={1}>{item.listing_title}</Text>
+              <Text style={styles.metaText}>{item.customer_name}</Text>
               <Text style={styles.metaBullet}>•</Text>
-              <Text style={styles.metaText} numberOfLines={1}>Vendor: {item.vendor_name}</Text>
+              <Text style={styles.metaText} numberOfLines={1}>{item.listing_title}</Text>
             </View>
             <Text style={styles.dateText}>{formatTxDate(item.created_at)}</Text>
           </View>
@@ -214,10 +215,10 @@ const PaymentHistoryScreen = ({ navigation }) => {
   }
 
   const summary = data?.summary || {
-    total_paid: 0,
+    total_received: 0,
     total_refunded: 0,
-    total_pending_refunds: 0,
-    net_spent: 0,
+    total_pending_release: 0,
+    total_earned: 0,
   };
 
   const filteredTransactions = getFilteredTransactions();
@@ -274,15 +275,15 @@ const PaymentHistoryScreen = ({ navigation }) => {
               
               <View style={styles.gridRow}>
                 <View style={styles.gridCell}>
-                  <Text style={styles.gridValLabel}>Total Paid</Text>
-                  <Text style={[styles.gridValue, { color: colors.error }]}>
-                    {formatCurrency(summary.total_paid)}
+                  <Text style={styles.gridValLabel}>Total Received</Text>
+                  <Text style={[styles.gridValue, { color: colors.success }]}>
+                    {formatCurrency(summary.total_received)}
                   </Text>
                 </View>
                 <View style={styles.verticalDivider} />
                 <View style={styles.gridCell}>
                   <Text style={styles.gridValLabel}>Total Refunded</Text>
-                  <Text style={[styles.gridValue, { color: colors.success }]}>
+                  <Text style={[styles.gridValue, { color: colors.error }]}>
                     {formatCurrency(summary.total_refunded)}
                   </Text>
                 </View>
@@ -292,16 +293,16 @@ const PaymentHistoryScreen = ({ navigation }) => {
 
               <View style={styles.gridRow}>
                 <View style={styles.gridCell}>
-                  <Text style={styles.gridValLabel}>Pending Refunds</Text>
+                  <Text style={styles.gridValLabel}>Pending Release</Text>
                   <Text style={[styles.gridValue, { color: colors.warning }]}>
-                    {formatCurrency(summary.total_pending_refunds)}
+                    {formatCurrency(summary.total_pending_release)}
                   </Text>
                 </View>
                 <View style={styles.verticalDivider} />
                 <View style={styles.gridCell}>
-                  <Text style={styles.gridValLabel}>Net Spent</Text>
+                  <Text style={styles.gridValLabel}>Net Earnings</Text>
                   <Text style={[styles.gridValue, { color: colors.text }]}>
-                    {formatCurrency(summary.net_spent)}
+                    {formatCurrency(summary.total_earned)}
                   </Text>
                 </View>
               </View>
@@ -367,8 +368,8 @@ const styles = StyleSheet.create({
     borderColor: '#E0E0E0',
   },
   activeTabButton: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.success,
+    borderColor: colors.success,
   },
   tabLabel: {
     fontSize: 14,
@@ -495,4 +496,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default PaymentHistoryScreen;
+export default VendorPaymentHistoryScreen;

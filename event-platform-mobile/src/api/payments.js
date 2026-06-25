@@ -74,9 +74,23 @@ export const releasePayment = async (bookingId) => {
   return response.data;
 };
 
+export const getVendorPaymentHistory = async () => {
+  console.log('[Payments API] Fetching vendor payment history...');
+  const response = await apiClient.get('/payments/vendor/history');
+  return response.data;
+};
+
+export const getCustomerPaymentHistory = async () => {
+  console.log('[Payments API] Fetching customer payment history...');
+  const response = await apiClient.get('/payments/customer/history');
+  return response.data;
+};
+
 export default {
   createPaymentOrder,
   verifyPayment,
   refundPayment,
   releasePayment,
+  getVendorPaymentHistory,
+  getCustomerPaymentHistory,
 };

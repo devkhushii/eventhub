@@ -102,6 +102,12 @@ def refund_payment(payment_id, amount=None):
     params = {}
     if amount is not None:
         params["amount"] = int(amount * 100)  # Razorpay expects amount in paise
+    if is_simulation_mode():
+        logger.warning(
+            f"[REFUND] Simulation mode - bypassing Razorpay refund call. "
+            f"payment_id={payment_id}, amount={amount}"
+        )
+        return {"id": f"rfnd_sim_{uuid.uuid4().hex[:8]}", "status": "processed"}
     logger.info(f"[REFUND] Calling REAL Razorpay refund API. payment_id={payment_id}, amount={amount}")
     return client.payment.refund(payment_id, params)
 

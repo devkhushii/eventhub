@@ -15,6 +15,7 @@ import BookingDetailScreen from '../screens/bookings/BookingDetailScreen';
 import ReviewsScreen from '../screens/reviews/ReviewsScreen';
 import PaymentScreen from '../screens/payments/PaymentScreen';
 import PaymentHistoryScreen from '../screens/payments/PaymentHistoryScreen';
+import VendorPaymentHistoryScreen from '../screens/vendor/VendorPaymentHistoryScreen';
 import ChatDetailScreen from '../screens/chat/ChatDetailScreen';
 import NotificationsScreen from '../screens/notifications/NotificationsScreen';
 import colors from '../styles/colors';
@@ -159,6 +160,13 @@ const AppNavigator = () => {
               title: 'Payment History',
               headerStyle: { backgroundColor: colors.surface },
               headerTintColor: colors.text,
+            }}
+          />
+          <Stack.Screen 
+            name="VendorPaymentHistory" 
+            component={VendorPaymentHistoryScreen}
+            options={{ 
+              headerShown: false,
             }}
           />
           <Stack.Screen 

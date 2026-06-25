@@ -15,6 +15,7 @@ import ProfileScreen from '../screens/profile/ProfileScreen';
 import VendorDashboardScreen from '../screens/vendor/VendorDashboardScreen';
 import VendorBookingsScreen from '../screens/vendor/VendorBookingsScreen';
 import VendorProfileScreen from '../screens/vendor/VendorProfileScreen';
+import VendorPaymentHistoryScreen from '../screens/vendor/VendorPaymentHistoryScreen';
 import MyListingsScreen from '../screens/vendor/MyListingsScreen';
 import CreateListingScreen from '../screens/vendor/CreateListingScreen';
 import EditListingScreen from '../screens/vendor/EditListingScreen';
@@ -95,6 +96,11 @@ const ProfileStackNavigator = () => {
         name="VendorProfile" 
         component={VendorProfileScreen}
         options={{ title: 'Vendor Profile' }}
+      />
+      <ProfileStack.Screen 
+        name="VendorPaymentHistory" 
+        component={VendorPaymentHistoryScreen}
+        options={{ headerShown: false }}
       />
       <ProfileStack.Screen 
         name="UserBookings" 
