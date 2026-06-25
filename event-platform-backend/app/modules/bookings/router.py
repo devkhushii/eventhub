@@ -1,6 +1,6 @@
 # app/modules/bookings/router.py
 
-from fastapi import APIRouter, Depends, HTTPException  # type: ignore
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks  # type: ignore
 from sqlalchemy.orm import Session  # type: ignore
 from uuid import UUID
 from typing import List
@@ -16,6 +16,7 @@ router = APIRouter()
 @router.post("", response_model=BookingResponse)
 def create_booking(
     data: BookingCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -23,7 +24,7 @@ def create_booking(
     print(
         f"[Bookings API] Input data: listing_id={data.listing_id}, event_date={data.event_date}, end_date={data.end_date}"
     )
-    booking = BookingService.create_booking(db, current_user.id, data)
+    booking = BookingService.create_booking(db, current_user.id, data, background_tasks)
     print(
         f"[Bookings API] Returning booking: id={booking.id}, total_price={booking.total_price}, total_days={booking.total_days}, advance_amount={booking.advance_amount}"
     )
@@ -35,11 +36,12 @@ def create_booking(
 def update_status(
     booking_id: UUID,
     data: BookingStatusUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     return BookingService.update_status(
-        db, booking_id, data.status, user_id=current_user.id
+        db, booking_id, data.status, background_tasks, user_id=current_user.id
     )
 
 

@@ -37,31 +37,46 @@ const PaymentHistoryScreen = ({ navigation }) => {
       for (const booking of bookings) {
         console.log('[PaymentHistory] Processing booking:', booking.id, 'advance_amount:', booking.advance_amount, 'status:', booking.status);
         
-        if (booking.advance_amount) {
-          const isAdvancePaid = booking.status !== 'AWAITING_ADVANCE';
-          paymentRecords.push({
-            id: `${booking.id}-advance`,
-            booking_id: booking.id,
-            amount: booking.advance_amount,
-            type: 'Advance Payment',
-            status: isAdvancePaid ? 'SUCCESS' : (booking.status === 'AWAITING_ADVANCE' ? 'PENDING' : 'FAILED'),
-            created_at: booking.created_at,
-            booking_status: booking.status,
-          });
-        }
-        
-        if (booking.status === 'COMPLETED') {
-          const remaining = booking.total_price - (booking.advance_amount || 0);
-          if (remaining > 0) {
+        if (booking.payments && booking.payments.length > 0) {
+          for (const payment of booking.payments) {
             paymentRecords.push({
-              id: `${booking.id}-final`,
+              id: payment.id,
               booking_id: booking.id,
-              amount: remaining,
-              type: 'Final Payment',
-              status: 'SUCCESS',
-              created_at: booking.updated_at || booking.created_at,
+              amount: payment.amount,
+              type: payment.payment_type === 'ADVANCE' ? 'Advance Payment' : 'Final Payment',
+              status: payment.status?.toUpperCase(),
+              created_at: payment.created_at,
               booking_status: booking.status,
             });
+          }
+        } else {
+          // Fallback legacy logic
+          if (booking.advance_amount) {
+            const isAdvancePaid = booking.status !== 'AWAITING_ADVANCE';
+            paymentRecords.push({
+              id: `${booking.id}-advance`,
+              booking_id: booking.id,
+              amount: booking.advance_amount,
+              type: 'Advance Payment',
+              status: isAdvancePaid ? 'SUCCESS' : (booking.status === 'AWAITING_ADVANCE' ? 'PENDING' : 'FAILED'),
+              created_at: booking.created_at,
+              booking_status: booking.status,
+            });
+          }
+          
+          if (booking.status === 'COMPLETED') {
+            const remaining = booking.total_price - (booking.advance_amount || 0);
+            if (remaining > 0) {
+              paymentRecords.push({
+                id: `${booking.id}-final`,
+                booking_id: booking.id,
+                amount: remaining,
+                type: 'Final Payment',
+                status: 'SUCCESS',
+                created_at: booking.updated_at || booking.created_at,
+                booking_status: booking.status,
+              });
+            }
           }
         }
       }
@@ -96,6 +111,8 @@ const PaymentHistoryScreen = ({ navigation }) => {
         return { label: 'Pending', color: colors.warning };
       case 'FAILED':
         return { label: 'Failed', color: colors.error };
+      case 'REFUNDED':
+        return { label: 'Refunded', color: colors.error };
       default:
         return { label: status, color: colors.textMuted };
     }

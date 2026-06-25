@@ -3,6 +3,7 @@
 from sqlalchemy import (
     Column,
     Integer,
+    Float,
     String,
     ForeignKey,
     Enum,
@@ -61,6 +62,8 @@ class Payment(Base):
 
     vendor_released_amount = Column(Integer, default=0)
     escrow_amount = Column(Integer, default=0)
+    refunded_amount = Column(Integer, default=0)
+    refund_percentage = Column(Float, default=0.0)
 
     razorpay_order_id = Column(String, index=True)
     razorpay_payment_id = Column(String, nullable=True)

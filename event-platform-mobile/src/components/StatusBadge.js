@@ -51,6 +51,18 @@ const STATUS_CONFIG = {
     textColor: colors.error,
     icon: '❌',
   },
+  REFUNDED: {
+    label: 'Refunded',
+    backgroundColor: colors.errorLight,
+    textColor: colors.error,
+    icon: '💸',
+  },
+  CANCELLATION_REQUESTED: {
+    label: 'Cancellation Requested',
+    backgroundColor: colors.warningLight,
+    textColor: colors.warning,
+    icon: '⏳',
+  },
 };
 
 const StatusBadge = ({ status, size = 'medium', showIcon = true, advancePaid = false }) => {

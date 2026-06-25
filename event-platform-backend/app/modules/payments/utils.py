@@ -98,5 +98,10 @@ def verify_webhook_signature(body: bytes, signature: str) -> bool:
         return False
 
 
-def refund_payment(payment_id):
-    return client.payment.refund(payment_id)
+def refund_payment(payment_id, amount=None):
+    params = {}
+    if amount is not None:
+        params["amount"] = int(amount * 100)  # Razorpay expects amount in paise
+    logger.info(f"[REFUND] Calling REAL Razorpay refund API. payment_id={payment_id}, amount={amount}")
+    return client.payment.refund(payment_id, params)
+

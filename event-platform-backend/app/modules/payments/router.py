@@ -233,12 +233,12 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
                 PayoutRepository.create(db, payout)
                 payment.escrow_status = EscrowStatus.PARTIALLY_RELEASED
 
-                payment.booking.status = BookingStatus.AWAITING_FINAL_PAYMENT
+                payment.booking.status = BookingStatus.CONFIRMED
                 payment.booking.advance_paid = True
                 payment.booking.advance_payment_status = AdvancePaymentStatus.PAID
                 logger.info(
                     f"[Webhook] Advance payment processed, "
-                    f"booking_status -> AWAITING_FINAL_PAYMENT, advance_paid=True"
+                    f"booking_status -> CONFIRMED, advance_paid=True"
                 )
 
             elif payment.payment_type == PaymentType.FINAL:

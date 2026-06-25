@@ -361,14 +361,14 @@ class PaymentService:
                 payment.escrow_amount = escrow_share
                 payment.escrow_status = EscrowStatus.PARTIALLY_RELEASED
 
-                # Update booking: CONFIRMED → AWAITING_FINAL_PAYMENT (atomic)
+                # Update booking: AWAITING_ADVANCE → CONFIRMED (atomic)
                 old_status = booking.status
-                booking.status = BookingStatus.AWAITING_FINAL_PAYMENT
+                booking.status = BookingStatus.CONFIRMED
                 booking.advance_paid = True
                 booking.advance_payment_status = AdvancePaymentStatus.PAID
 
                 logger.info(
-                    f"[VERIFY] Advance payment processed: "
+                    f"[VERIFY] [CONFIRMED] Advance payment processed: "
                     f"vendor_share={vendor_share}, escrow_share={escrow_share}, "
                     f"booking_status: {old_status} -> {booking.status}, "
                     f"advance_paid=True"
@@ -444,6 +444,24 @@ class PaymentService:
             logger.info(
                 f"[VERIFY] Payment notification created for user {booking.user_id}"
             )
+
+            # Notify vendor
+            if payment.payment_type == PaymentType.ADVANCE:
+                from app.modules.vendors.models import Vendor
+                vendor = db.query(Vendor).filter(Vendor.id == booking.listing.vendor_id).first()
+                if vendor and vendor.user_id:
+                    try:
+                        from app.modules.notifications.trigger import notification_trigger
+                        notification_trigger.notify_vendor_advance_paid_sync(
+                            vendor_user_id=vendor.user_id,
+                            booking_id=booking.id,
+                            listing_title=booking.listing.title if booking.listing else "booking",
+                            amount=payment.amount,
+                        )
+                        logger.info(f"[VERIFY] Vendor notified for advance payment: vendor_user={vendor.user_id}")
+                    except Exception as ve:
+                        logger.error(f"[VERIFY] Failed to create vendor payment notification: {ve}")
+
         except Exception as e:
             logger.error(f"[VERIFY] Failed to create payment notification: {e}")
 
@@ -576,3 +594,272 @@ class PaymentService:
             f"Refund completed: payment_id={payment.id}, booking_status={booking.status}"
         )
         return payment
+
+    @staticmethod
+    def process_cancellation_refund(db: Session, booking_id: UUID, vendor_id: UUID):
+        """
+        Vendor-approved partial refund (70%) of advance payment for customer-initiated CANCELLATION_REQUESTED booking.
+        
+        Flow: Razorpay Refund → Success → Update Payment → Update Booking → Notify
+        If refund fails: booking stays CANCELLATION_REQUESTED, no status change.
+        """
+        booking = BookingRepository.get_by_id(db, booking_id)
+        if not booking:
+            raise HTTPException(status_code=404, detail="Booking not found")
+
+        # Verify vendor owns the listing of this booking
+        if booking.listing.vendor_id != vendor_id:
+            raise HTTPException(status_code=403, detail="Not authorized to refund this booking")
+
+        if booking.status != BookingStatus.CANCELLATION_REQUESTED:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Booking must be in CANCELLATION_REQUESTED status. Current status: {booking.status.value}",
+            )
+
+        # Find the successful advance payment
+        advance_payment = (
+            db.query(Payment)
+            .filter(
+                Payment.booking_id == booking_id,
+                Payment.payment_type == PaymentType.ADVANCE,
+                Payment.status == PaymentStatus.SUCCESS,
+            )
+            .first()
+        )
+
+        if not advance_payment:
+            raise HTTPException(
+                status_code=400,
+                detail="No successful advance payment found for this booking"
+            )
+
+        refund_percentage = 0.7
+        refund_amount = int(advance_payment.amount * refund_percentage)
+        listing_title = booking.listing.title if booking.listing else "booking"
+
+        logger.info(
+            f"[REFUND] [CUSTOMER_CANCEL] Processing 70% refund: booking_id={booking_id}, "
+            f"advance_amount={advance_payment.amount}, refund_amount={refund_amount}, "
+            f"razorpay_payment_id={advance_payment.razorpay_payment_id}"
+        )
+
+        # Step 1: Call Razorpay refund API
+        try:
+            refund_result = refund_payment(advance_payment.razorpay_payment_id, amount=refund_amount)
+            logger.info(
+                f"[REFUND] [REFUND_SUCCESS] Razorpay refund confirmed: "
+                f"razorpay_payment_id={advance_payment.razorpay_payment_id}, "
+                f"refund_amount={refund_amount}, result={refund_result}"
+            )
+        except Exception as e:
+            # CRITICAL: Refund failed — do NOT update booking status
+            logger.error(
+                f"[REFUND] [REFUND_FAILED] Razorpay refund failed: "
+                f"booking_id={booking_id}, error={e}"
+            )
+            
+            # Notify vendor of failure
+            try:
+                from app.modules.notifications.trigger import notification_trigger
+                from app.modules.vendors.models import Vendor
+                vendor = db.query(Vendor).filter(Vendor.id == vendor_id).first()
+                vendor_user_id = vendor.user_id if vendor else None
+                if vendor_user_id:
+                    notification_trigger.notify_vendor_refund_result_sync(
+                        vendor_user_id=vendor_user_id,
+                        booking_id=booking_id,
+                        listing_title=listing_title,
+                        success=False,
+                    )
+            except Exception as notify_err:
+                logger.error(f"[REFUND] Failed to send refund failure notification: {notify_err}")
+            
+            raise HTTPException(status_code=500, detail="Refund processing failed. Booking remains in cancellation requested status.")
+
+        # Step 2: Refund succeeded — update payment record
+        advance_payment.status = PaymentStatus.REFUNDED
+        advance_payment.escrow_status = EscrowStatus.REFUNDED
+        advance_payment.refunded_amount = refund_amount
+        advance_payment.refund_percentage = refund_percentage
+
+        # Customer cancellation after advance payment:
+        # Platform commission = 10% of advance amount.
+        # Vendor earnings = remaining retained amount - platform commission.
+        platform_commission = int(advance_payment.amount * PLATFORM_COMMISSION)
+        retained_amount = advance_payment.amount - refund_amount
+        vendor_earnings = max(0, retained_amount - platform_commission)
+
+        advance_payment.vendor_released_amount = vendor_earnings
+        advance_payment.escrow_amount = platform_commission
+
+        # Adjust payout ledger
+        payout = db.query(Payout).filter(Payout.payment_id == advance_payment.id).first()
+        if payout:
+            payout.amount = vendor_earnings
+            logger.info(f"[REFUND] Vendor payout adjusted: new_amount={payout.amount}")
+
+        # Step 3: Update booking status to CANCELLED
+        booking.status = BookingStatus.CANCELLED
+        booking.expires_at = None
+
+        db.commit()
+
+        logger.info(
+            f"[REFUND] [CANCELLED] Booking cancelled after refund: "
+            f"booking_id={booking_id}, refunded_amount={refund_amount}, "
+            f"vendor_earnings={advance_payment.vendor_released_amount}"
+        )
+
+        # Step 4: Send notifications
+        try:
+            from app.modules.notifications.trigger import notification_trigger
+            from app.modules.vendors.models import Vendor
+            vendor = db.query(Vendor).filter(Vendor.id == vendor_id).first()
+            vendor_user_id = vendor.user_id if vendor else None
+
+            # Notify customer: refund processed
+            notification_trigger.notify_refund_processed_sync(
+                user_id=booking.user_id,
+                booking_id=booking_id,
+                listing_title=listing_title,
+                refund_amount=refund_amount,
+            )
+            # Notify customer: refund credited
+            notification_trigger.notify_refund_credited_sync(
+                user_id=booking.user_id,
+                booking_id=booking_id,
+                refund_amount=refund_amount,
+            )
+            # Notify vendor: refund success
+            if vendor_user_id:
+                notification_trigger.notify_vendor_refund_result_sync(
+                    vendor_user_id=vendor_user_id,
+                    booking_id=booking_id,
+                    listing_title=listing_title,
+                    success=True,
+                    refund_amount=refund_amount,
+                )
+            logger.info(f"[REFUND] All refund notifications sent successfully")
+        except Exception as e:
+            logger.error(f"[REFUND] Failed to send refund notifications: {e}")
+
+        return advance_payment
+
+    @staticmethod
+    def process_vendor_cancellation_refund(db: Session, booking_id: UUID, vendor_id: UUID):
+        """
+        Vendor-initiated 100% refund of advance payment.
+        No platform commission charged. Full refund to customer.
+        
+        Flow: Razorpay Refund → Success → Update Payment → Update Booking → Notify
+        If refund fails: booking stays in current status, exception raised.
+        """
+        booking = BookingRepository.get_by_id(db, booking_id)
+        if not booking:
+            raise HTTPException(status_code=404, detail="Booking not found")
+
+        if booking.listing.vendor_id != vendor_id:
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+        # Find the successful advance payment
+        advance_payment = (
+            db.query(Payment)
+            .filter(
+                Payment.booking_id == booking_id,
+                Payment.payment_type == PaymentType.ADVANCE,
+                Payment.status == PaymentStatus.SUCCESS,
+            )
+            .first()
+        )
+
+        if not advance_payment:
+            raise HTTPException(
+                status_code=400,
+                detail="No successful advance payment found for this booking"
+            )
+
+        refund_amount = advance_payment.amount  # 100% refund
+        listing_title = booking.listing.title if booking.listing else "booking"
+
+        logger.info(
+            f"[REFUND] [VENDOR_CANCEL] Processing 100% refund: booking_id={booking_id}, "
+            f"refund_amount={refund_amount}, razorpay_payment_id={advance_payment.razorpay_payment_id}"
+        )
+
+        # Step 1: Call Razorpay refund API (100%)
+        try:
+            refund_result = refund_payment(advance_payment.razorpay_payment_id, amount=refund_amount)
+            logger.info(
+                f"[REFUND] [REFUND_SUCCESS] Vendor cancellation refund confirmed: "
+                f"refund_amount={refund_amount}, result={refund_result}"
+            )
+        except Exception as e:
+            logger.error(
+                f"[REFUND] [REFUND_FAILED] Vendor cancellation refund failed: "
+                f"booking_id={booking_id}, error={e}"
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Refund processing failed. Cannot complete vendor cancellation.",
+            )
+
+        # Step 2: Update payment record
+        advance_payment.status = PaymentStatus.REFUNDED
+        advance_payment.escrow_status = EscrowStatus.REFUNDED
+        advance_payment.refunded_amount = refund_amount
+        advance_payment.refund_percentage = 1.0
+        advance_payment.vendor_released_amount = 0  # Vendor gets nothing
+        advance_payment.escrow_amount = 0  # No platform commission
+
+        # Zero out payout ledger
+        payout = db.query(Payout).filter(Payout.payment_id == advance_payment.id).first()
+        if payout:
+            payout.amount = 0
+            logger.info(f"[REFUND] Vendor payout zeroed out for vendor cancellation")
+
+        # Step 3: Update booking to CANCELLED
+        booking.status = BookingStatus.CANCELLED
+        booking.expires_at = None
+
+        db.commit()
+
+        logger.info(
+            f"[REFUND] [VENDOR_CANCELLED] Booking cancelled: booking_id={booking_id}, "
+            f"full_refund={refund_amount}"
+        )
+
+        # Step 4: Send notifications
+        try:
+            from app.modules.notifications.trigger import notification_trigger
+            from app.modules.vendors.models import Vendor
+            vendor = db.query(Vendor).filter(Vendor.id == vendor_id).first()
+            vendor_user_id = vendor.user_id if vendor else None
+
+            # Notify customer: vendor cancelled + full refund
+            notification_trigger.notify_vendor_cancelled_by_vendor_sync(
+                customer_user_id=booking.user_id,
+                booking_id=booking_id,
+                listing_title=listing_title,
+                refund_amount=refund_amount,
+            )
+            # Notify customer: refund credited
+            notification_trigger.notify_refund_credited_sync(
+                user_id=booking.user_id,
+                booking_id=booking_id,
+                refund_amount=refund_amount,
+            )
+            # Notify vendor: refund success
+            if vendor_user_id:
+                notification_trigger.notify_vendor_refund_result_sync(
+                    vendor_user_id=vendor_user_id,
+                    booking_id=booking_id,
+                    listing_title=listing_title,
+                    success=True,
+                    refund_amount=refund_amount,
+                )
+            logger.info(f"[REFUND] All vendor cancellation notifications sent successfully")
+        except Exception as e:
+            logger.error(f"[REFUND] Failed to send vendor cancellation notifications: {e}")
+
+        return advance_payment

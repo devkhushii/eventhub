@@ -18,7 +18,11 @@ class BookingRepository:
     def get_by_id(db: Session, booking_id: UUID):
         return (
             db.query(Booking)
-            .options(joinedload(Booking.user), joinedload(Booking.listing))
+            .options(
+                joinedload(Booking.user),
+                joinedload(Booking.listing),
+                joinedload(Booking.payments),
+            )
             .filter(Booking.id == booking_id)
             .first()
         )
@@ -27,7 +31,7 @@ class BookingRepository:
     def get_user_bookings(db: Session, user_id: UUID):
         return (
             db.query(Booking)
-            .options(joinedload(Booking.listing))
+            .options(joinedload(Booking.listing), joinedload(Booking.payments))
             .filter(Booking.user_id == user_id)
             .all()
         )
@@ -41,7 +45,11 @@ class BookingRepository:
         query = (
             db.query(Booking)
             .join(Booking.listing)
-            .options(joinedload(Booking.user), joinedload(Booking.listing))
+            .options(
+                joinedload(Booking.user),
+                joinedload(Booking.listing),
+                joinedload(Booking.payments),
+            )
             .filter(Listing.vendor_id == vendor_id)
         )
 

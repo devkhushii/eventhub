@@ -89,8 +89,8 @@ const PaymentScreen = ({ navigation, route }) => {
   }, []);
 
   const navigateToBookings = useCallback(() => {
-    navigation.navigate('MainTabs', { screen: 'Bookings' });
-  }, [navigation]);
+    navigation.navigate('BookingDetail', { bookingId });
+  }, [navigation, bookingId]);
 
   const handleVerificationComplete = useCallback((status, booking) => {
     if (!isMountedRef.current) return;

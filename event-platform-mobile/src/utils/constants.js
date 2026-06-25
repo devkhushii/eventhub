@@ -5,7 +5,7 @@ const PORT = '8000';
 const API_VERSION = 'api/v1';
 const WS_PATH = '';
 
-const DEV_HOST_IP = '192.168.0.5';
+const DEV_HOST_IP = '192.168.0.6';
 
 export const API_ENV = {
   ANDROID_EMULATOR: `http://10.0.2.2:${PORT}/${API_VERSION}`,

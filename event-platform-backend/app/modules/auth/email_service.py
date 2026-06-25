@@ -68,7 +68,7 @@ The EventHub Team
         print(f"[EMAIL] Password reset to {email}")
 
         try:
-            recipients = [TEST_EMAIL]
+            recipients = [email]
 
             reset_link = (
                 f"http://localhost:8000/api/v1/auth/reset-password?token={token}"

@@ -14,61 +14,16 @@ import { getMyBookings } from '../../api/bookings';
 import BookingCard from '../../components/BookingCard';
 import LoadingScreen from '../../components/LoadingScreen';
 import EmptyState from '../../components/EmptyState';
-import { colors, borderRadius } from '../../styles/colors';
-import { FontAwesome5 } from '@expo/vector-icons';
+import { colors } from '../../styles/colors';
 
 const POLLING_INTERVAL_MS = 10000;
 const VALID_SUCCESS_STATUSES = ['CONFIRMED', 'COMPLETED'];
 const FAILURE_STATUSES = ['CANCELLED', 'REJECTED'];
 
-const PAYMENT_BUTTON_STATES = {
-  PENDING: {
-    label: 'Pay Now',
-    icon: 'credit-card',
-    color: colors.primary,
-  },
-  APPROVED: {
-    label: 'Pay Now',
-    icon: 'credit-card',
-    color: colors.primary,
-  },
-  AWAITING_ADVANCE: {
-    label: 'Pay Advance',
-    icon: 'credit-card',
-    color: colors.primary,
-  },
-  CONFIRMED: {
-    label: 'Pay Remaining',
-    icon: 'coins',
-    color: colors.primary,
-  },
-  AWAITING_FINAL_PAYMENT: {
-    label: 'Confirmed Pay Remaining',
-    icon: 'coins',
-    color: colors.primary,
-  },
-  COMPLETED: {
-    label: 'Completed',
-    icon: 'check-circle',
-    color: colors.success,
-  },
-  CANCELLED: {
-    label: 'Cancelled',
-    icon: 'times-circle',
-    color: colors.error,
-  },
-  REJECTED: {
-    label: 'Rejected',
-    icon: 'times-circle',
-    color: colors.error,
-  },
-};
-
 const MyBookingsScreen = ({ navigation }) => {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [processingPayment, setProcessingPayment] = useState(null);
   const isMounted = useRef(true);
 
   const fetchBookings = async () => {
@@ -220,55 +175,16 @@ const MyBookingsScreen = ({ navigation }) => {
       return;
     }
     console.log('[MyBookings] Booking clicked:', { id: booking.id, status: booking.status });
-    
-    const status = booking.status;
-    
-    if (status === 'AWAITING_ADVANCE') {
-      console.log('[MyBookings] Navigating to Payment - ADVANCE');
-      navigation.navigate('Payment', {
-        bookingId: booking.id,
-        paymentType: 'ADVANCE',
-        amount: booking.advance_amount || booking.total_price * 0.3,
-        totalPrice: booking.total_price,
-        listingTitle: booking.listing?.title || 'Event Booking',
-      });
-    } else if (status === 'CONFIRMED' || status === 'AWAITING_FINAL_PAYMENT') {
-      console.log('[MyBookings] Navigating to Payment - FINAL');
-      const remainingAmount = booking.total_price - (booking.advance_amount || booking.total_price * 0.3);
-      navigation.navigate('Payment', {
-        bookingId: booking.id,
-        paymentType: 'FINAL',
-        amount: remainingAmount,
-        totalPrice: booking.total_price,
-        listingTitle: booking.listing?.title || 'Event Booking',
-      });
-    } else {
-      navigation.navigate('BookingDetail', { bookingId: booking.id });
-    }
+    navigation.navigate('BookingDetail', { bookingId: booking.id });
   };
 
-  const handlePaymentAction = (booking) => {
-    console.log('[MyBookings] Payment action triggered:', { 
-      id: booking.id, 
-      status: booking.status 
-    });
-    handleBookingPress(booking);
-  };
-
-  const getPaymentButtonConfig = (status) => {
-    return PAYMENT_BUTTON_STATES[status] || null;
-  };
-
-  const renderBooking = ({ item, index }) => {
+  const renderBooking = ({ item }) => {
     if (!item) {
       console.log('[MyBookings] Skipping null item in render');
       return null;
     }
     
     console.log('[MyBookings] Rendering booking:', { id: item.id, status: item.status, advance_paid: item.advance_paid });
-    
-    const paymentConfig = getPaymentButtonConfig(item.status);
-    const isPaymentProcessing = processingPayment === item.id;
     
     return (
       <View style={styles.cardContainer}>
@@ -277,21 +193,6 @@ const MyBookingsScreen = ({ navigation }) => {
           onPress={() => handleBookingPress(item)}
           variant="user"
         />
-        {paymentConfig && (
-          <TouchableOpacity
-            style={[
-              styles.paymentButton,
-              { backgroundColor: paymentConfig.color },
-              isPaymentProcessing && styles.paymentButtonDisabled,
-            ]}
-            onPress={() => handlePaymentAction(item)}
-            disabled={isPaymentProcessing || item.status === 'COMPLETED'}
-            activeOpacity={0.8}
-          >
-            <FontAwesome5 name={paymentConfig.icon} size={16} color="#fff" style={styles.paymentButtonIcon} />
-            <Text style={styles.paymentButtonText}>{paymentConfig.label}</Text>
-          </TouchableOpacity>
-        )}
       </View>
     );
   };
@@ -373,32 +274,6 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     marginBottom: 8,
-  },
-  paymentButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: borderRadius.md,
-    marginTop: -8,
-    marginHorizontal: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  paymentButtonDisabled: {
-    opacity: 0.6,
-  },
-  paymentButtonIcon: {
-    marginRight: 8,
-  },
-  paymentButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });
 

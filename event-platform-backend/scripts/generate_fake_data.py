@@ -5,17 +5,18 @@
 import random
 from typing import Any
 from datetime import datetime, timedelta, timezone
+from collections import Counter
 
 from app.db.session import SessionLocal
 from app.modules.users.models import User
 
-# Import auth models first to ensure they're registered
 from app.modules.auth.models import (
     RefreshToken,
     EmailVerificationToken,
     PasswordResetToken,
 )
-from app.modules.notifications.models import Notification
+from app.modules.notifications.models import Notification, NotificationType
+from app.modules.notifications.models import DeviceToken, DevicePlatform
 from app.modules.vendors.models import Vendor, VendorType, VerificationStatus
 from app.modules.listings.models import (
     Listing,
@@ -35,10 +36,12 @@ from app.modules.payments.models import (
 )
 from app.modules.chat.models import ChatRoom, Message
 from app.core.security import hash_password
+from app.modules.payments.constant import ADVANCE_PERCENTAGE, ADVANCE_TO_VENDOR_PERCENT
+
+from faker import Faker
 
 fake = Faker()
 
-# Initialize database session - will be cleaned up at script end
 db = SessionLocal()
 
 # --- CONSTANTS ---
@@ -59,15 +62,16 @@ LISTING_STATUSES = [
     ListingStatus.ARCHIVED,
 ]
 
-BOOKING_STATUSES = [
-    BookingStatus.PENDING,
-    BookingStatus.APPROVED,
-    BookingStatus.AWAITING_ADVANCE,
-    BookingStatus.CONFIRMED,
-    BookingStatus.AWAITING_FINAL_PAYMENT,
-    BookingStatus.COMPLETED,
-    BookingStatus.REJECTED,
-    BookingStatus.CANCELLED,
+BOOKING_STATUS_DISTRIBUTION = [
+    (BookingStatus.PENDING, 10),
+    (BookingStatus.AWAITING_ADVANCE, 15),
+    (BookingStatus.CONFIRMED, 20),
+    (BookingStatus.AWAITING_FINAL_PAYMENT, 10),
+    (BookingStatus.COMPLETED, 25),
+    (BookingStatus.CANCELLATION_REQUESTED, 5),
+    (BookingStatus.CANCELLED, 8),
+    (BookingStatus.REJECTED, 4),
+    (BookingStatus.PAYMENT_FAILED, 3),
 ]
 
 VENDOR_TYPES = [VendorType.INDIVIDUAL, VendorType.MANAGER]
@@ -114,29 +118,40 @@ CITIES = [
     "Indore",
 ]
 
+CURRENCY = "INR"
+
 
 # --- HELPER FUNCTIONS ---
 
 
 def get_random_safe(items: list) -> Any:
-    """Safely get a random item from a list."""
     if not items:
         return None
     return random.choice(items)
 
 
 def get_random_sample_safe(items: list, n: int) -> list:
-    """Safely get n random items from a list."""
     if not items or n <= 0:
         return []
     return random.sample(items, min(n, len(items)))
+
+
+def pick_weighted(weighted_items: list) -> Any:
+    items, weights = zip(*weighted_items)
+    return random.choices(items, weights=weights, k=1)[0]
+
+
+def compute_total_days(event_date: datetime, end_date: datetime | None) -> int:
+    if not end_date:
+        return 1
+    delta = (end_date.date() - event_date.date()).days + 1
+    return max(delta, 1)
 
 
 # --- CORE FUNCTIONS ---
 
 
 def create_admin_user():
-    """Create admin user if not exists."""
     existing_admin = db.query(User).filter(User.email == "admin@eventhub.com").first()
     if existing_admin:
         print("Admin user already exists, skipping")
@@ -152,6 +167,7 @@ def create_admin_user():
         is_admin=True,
         is_active=True,
         is_verified=True,
+        expo_push_token=None,
     )
 
     db.add(admin)
@@ -163,10 +179,6 @@ def create_admin_user():
 
 
 def create_users(n=30):
-    """
-    Ensure at least n users exist in the database.
-    Creates additional users if needed.
-    """
     existing_count = db.query(User).count()
     existing_users = db.query(User).filter(User.role == "USER").all()
 
@@ -174,7 +186,6 @@ def create_users(n=30):
         print(f"Users already exist ({len(existing_users)}), using existing users")
         return existing_users[:n]
 
-    # Need to create more users
     users_to_create = n - len(existing_users)
     print(f"Creating {users_to_create} additional users...")
 
@@ -189,6 +200,9 @@ def create_users(n=30):
                 avatar_url=fake.image_url(width=200, height=200),
                 fcm_token=fake.uuid4() if random.random() > 0.5 else None,
                 device_token=fake.uuid4() if random.random() > 0.7 else None,
+                expo_push_token=f"ExponentPushToken[{fake.uuid4()}]"
+                if random.random() > 0.6
+                else None,
                 role="USER",
                 is_admin=False,
                 is_active=True,
@@ -204,38 +218,26 @@ def create_users(n=30):
         db.commit()
         print(f"{len(new_users)} users created")
 
-    # Return all users up to n
     all_users = db.query(User).filter(User.role == "USER").all()
     return all_users[:n]
 
 
 def create_vendors(users, n=12):
-    """
-    Create vendors for users who don't already have one.
-    Returns list of actually created vendors.
-    """
     if not users:
         print("No users available for vendor creation")
         return []
 
-    # Filter out users who already have vendors
-    non_vendor_users = []
-    for u in users:
-        # Check if user already has a vendor
-        has_vendor = db.query(Vendor).filter(Vendor.user_id == u.id).first() is not None
-        if not has_vendor:
-            non_vendor_users.append(u)
+    existing_vendor_user_ids = {v.user_id for v in db.query(Vendor).all()}
+    non_vendor_users = [u for u in users if u.id not in existing_vendor_user_ids]
 
     if not non_vendor_users:
-        print("No eligible users for vendor creation (all users already have vendors)")
+        print("No eligible users for vendor creation")
         return []
 
-    # Don't create more vendors than available users
     users_to_make_vendor = min(n, len(non_vendor_users))
     selected_users = get_random_sample_safe(non_vendor_users, users_to_make_vendor)
 
     if not selected_users:
-        print("No users selected for vendor creation")
         return []
 
     vendors = []
@@ -266,7 +268,6 @@ def create_vendors(users, n=12):
 
 
 def create_listings(vendors, n=40):
-    """Create listings for vendors."""
     if not vendors:
         print("No vendors available to create listings")
         return []
@@ -320,7 +321,6 @@ def create_listings(vendors, n=40):
 
 
 def add_listing_images(listings):
-    """Add images to listings."""
     if not listings:
         print("No listings to add images to")
         return 0
@@ -345,7 +345,6 @@ def add_listing_images(listings):
 
 
 def create_bookings(users, listings, n=60):
-    """Create bookings for users and listings."""
     if not users:
         print("No users available to create bookings")
         return []
@@ -363,43 +362,65 @@ def create_bookings(users, listings, n=60):
         if not user or not listing:
             continue
 
-        event_date = datetime.now(timezone.utc) + timedelta(days=random.randint(5, 120))
-        end_date = event_date + timedelta(hours=random.choice([4, 6, 8, 12]))
+        now = datetime.now(timezone.utc)
 
-        if end_date and end_date > event_date:
-            total_days = (end_date.date() - event_date.date()).days + 1
+        status = pick_weighted(BOOKING_STATUS_DISTRIBUTION)
+
+        event_date_delta = random.randint(5, 120)
+        event_date = now + timedelta(days=event_date_delta)
+        is_multi_day = random.random() > 0.4
+        if is_multi_day:
+            end_date = event_date + timedelta(days=random.randint(1, 3))
         else:
-            total_days = 1
+            end_date = event_date + timedelta(hours=random.choice([4, 6, 8, 12]))
 
-        # total_price is now based on listing price × total_days (like production)
+        total_days = compute_total_days(event_date, end_date)
         total_price = listing.price * total_days
-        advance_amount = round(total_price * 0.3, 2)
+        advance_amount = round(total_price * ADVANCE_PERCENTAGE, 2)
 
-        status = get_random_safe(BOOKING_STATUSES) or BookingStatus.PENDING
+        advance_paid = False
+        advance_payment_status = AdvancePaymentStatus.NONE
+        booking_advance_amount = None
 
-        advance_paid = (
-            status in [BookingStatus.CONFIRMED, BookingStatus.COMPLETED]
-            if random.random() > 0.3
-            else False
-        )
-        advance_payment_status = (
-            AdvancePaymentStatus.PAID
-            if advance_paid
-            else (
-                AdvancePaymentStatus.PENDING
-                if advance_amount
-                else AdvancePaymentStatus.NONE
-            )
-        )
+        if status == BookingStatus.PENDING:
+            advance_paid = False
+            advance_payment_status = AdvancePaymentStatus.NONE
+            booking_advance_amount = None
+
+        elif status == BookingStatus.AWAITING_ADVANCE:
+            advance_paid = False
+            advance_payment_status = AdvancePaymentStatus.PENDING
+            booking_advance_amount = advance_amount
+
+        elif status in (
+            BookingStatus.CONFIRMED,
+            BookingStatus.AWAITING_FINAL_PAYMENT,
+            BookingStatus.COMPLETED,
+            BookingStatus.CANCELLATION_REQUESTED,
+        ):
+            advance_paid = True
+            advance_payment_status = AdvancePaymentStatus.PAID
+            booking_advance_amount = advance_amount
+
+        elif status in (BookingStatus.CANCELLED, BookingStatus.REJECTED):
+            advance_paid = False
+            advance_payment_status = AdvancePaymentStatus.NONE
+            booking_advance_amount = None
+
+        elif status == BookingStatus.PAYMENT_FAILED:
+            advance_paid = False
+            advance_payment_status = AdvancePaymentStatus.FAILED
+            booking_advance_amount = advance_amount
 
         booking = Booking(
             user_id=user.id,
             listing_id=listing.id,
             event_date=event_date,
             end_date=end_date,
+            total_days=total_days,
             total_price=round(total_price, 2),
             status=status,
-            advance_amount=advance_amount if random.choice([True, False]) else None,
+            advance_amount=booking_advance_amount,
             advance_paid=advance_paid,
             advance_payment_status=advance_payment_status,
             special_request=fake.sentence() if random.random() > 0.5 else None,
@@ -415,7 +436,6 @@ def create_bookings(users, listings, n=60):
 
 
 def create_payments(bookings):
-    """Create payments for bookings."""
     if not bookings:
         print("No bookings available to create payments")
         return []
@@ -423,73 +443,124 @@ def create_payments(bookings):
     payments = []
 
     for booking in bookings:
-        if not booking.listing:
+        listing = db.query(Listing).filter(Listing.id == booking.listing_id).first()
+        if not listing:
             continue
 
-        if booking.status in [
+        status = booking.status
+
+        advance_amount = int(booking.total_price * ADVANCE_PERCENTAGE)
+        final_amount = int(
+            booking.total_price - (booking.total_price * ADVANCE_PERCENTAGE)
+        )
+
+        if status == BookingStatus.AWAITING_ADVANCE:
+            payment = Payment(
+                booking_id=booking.id,
+                amount=advance_amount,
+                currency=CURRENCY,
+                payment_type=PaymentType.ADVANCE,
+                status=PaymentStatus.PENDING,
+                escrow_status=EscrowStatus.PENDING,
+                vendor_released_amount=0,
+                escrow_amount=0,
+                refunded_amount=0,
+                refund_percentage=0.0,
+                razorpay_order_id=f"order_{fake.uuid4().replace('-', '')[:20]}",
+                razorpay_payment_id=None,
+            )
+            db.add(payment)
+            payments.append(payment)
+
+        elif status in (
             BookingStatus.CONFIRMED,
             BookingStatus.AWAITING_FINAL_PAYMENT,
             BookingStatus.COMPLETED,
-        ]:
-            if booking.advance_paid and booking.advance_amount:
-                advance_amount_cents = int(booking.advance_amount * 100)
+            BookingStatus.CANCELLATION_REQUESTED,
+        ):
+            vendor_share = int(advance_amount * ADVANCE_TO_VENDOR_PERCENT)
+            escrow_share = advance_amount - vendor_share
 
-                escrow_status = EscrowStatus.PENDING
-                if booking.status == BookingStatus.CONFIRMED:
-                    escrow_status = EscrowStatus.PARTIALLY_RELEASED
-                elif booking.status == BookingStatus.AWAITING_FINAL_PAYMENT:
-                    escrow_status = EscrowStatus.HELD
-                elif booking.status == BookingStatus.COMPLETED:
-                    escrow_status = (
-                        get_random_safe(
-                            [EscrowStatus.RELEASED, EscrowStatus.PARTIALLY_RELEASED]
-                        )
-                        or EscrowStatus.RELEASED
-                    )
+            escrow_status = EscrowStatus.PARTIALLY_RELEASED
+            if status == BookingStatus.CONFIRMED:
+                escrow_status = EscrowStatus.PARTIALLY_RELEASED
+            elif status == BookingStatus.AWAITING_FINAL_PAYMENT:
+                escrow_status = EscrowStatus.HELD
+            elif status == BookingStatus.COMPLETED:
+                escrow_status = EscrowStatus.RELEASED
+            elif status == BookingStatus.CANCELLATION_REQUESTED:
+                escrow_status = EscrowStatus.HELD
 
-                vendor_released = (
-                    int(advance_amount_cents * 0.3)
-                    if booking.status == BookingStatus.CONFIRMED
-                    else 0
-                )
-
-                payment = Payment(
-                    booking_id=booking.id,
-                    amount=advance_amount_cents,
-                    payment_type=PaymentType.ADVANCE,
-                    status=PaymentStatus.SUCCESS,
-                    escrow_status=escrow_status,
-                    vendor_released_amount=vendor_released,
-                    escrow_amount=advance_amount_cents - vendor_released,
-                    razorpay_order_id=f"order_{fake.uuid4().replace('-', '')[:20]}",
-                    razorpay_payment_id=f"pay_{fake.uuid4().replace('-', '')[:20]}",
-                    # payment_link_id=f"pl_{fake.uuid4().replace('-', '')[:12]}",
-                    # payment_link_url=f"https://razorpay.com/payment/{fake.uuid4()[:12]}",
-                )
-                db.add(payment)
-                payments.append(payment)
-
-        if booking.status == BookingStatus.COMPLETED:
-            final_amount = int(
-                (booking.total_price - (booking.advance_amount or 0)) * 100
+            advance_payment = Payment(
+                booking_id=booking.id,
+                amount=advance_amount,
+                currency=CURRENCY,
+                payment_type=PaymentType.ADVANCE,
+                status=PaymentStatus.SUCCESS,
+                escrow_status=escrow_status,
+                vendor_released_amount=vendor_share,
+                escrow_amount=escrow_share,
+                refunded_amount=0,
+                refund_percentage=0.0,
+                razorpay_order_id=f"order_{fake.uuid4().replace('-', '')[:20]}",
+                razorpay_payment_id=f"pay_{fake.uuid4().replace('-', '')[:20]}",
             )
-            if final_amount > 0:
+            db.add(advance_payment)
+            payments.append(advance_payment)
+
+            if status == BookingStatus.AWAITING_FINAL_PAYMENT:
                 final_payment = Payment(
                     booking_id=booking.id,
                     amount=final_amount,
+                    currency=CURRENCY,
+                    payment_type=PaymentType.FINAL,
+                    status=PaymentStatus.PENDING,
+                    escrow_status=EscrowStatus.PENDING,
+                    vendor_released_amount=0,
+                    escrow_amount=0,
+                    refunded_amount=0,
+                    refund_percentage=0.0,
+                    razorpay_order_id=f"order_{fake.uuid4().replace('-', '')[:20]}",
+                    razorpay_payment_id=None,
+                )
+                db.add(final_payment)
+                payments.append(final_payment)
+
+            elif status == BookingStatus.COMPLETED:
+                final_payment = Payment(
+                    booking_id=booking.id,
+                    amount=final_amount,
+                    currency=CURRENCY,
                     payment_type=PaymentType.FINAL,
                     status=PaymentStatus.SUCCESS,
-                    escrow_status=get_random_safe(
-                        [EscrowStatus.RELEASED, EscrowStatus.HELD]
-                    )
-                    or EscrowStatus.HELD,
-                    vendor_released_amount=random.randint(0, final_amount),
-                    escrow_amount=random.randint(0, final_amount),
+                    escrow_status=EscrowStatus.HELD,
+                    vendor_released_amount=0,
+                    escrow_amount=final_amount,
+                    refunded_amount=0,
+                    refund_percentage=0.0,
                     razorpay_order_id=f"order_{fake.uuid4().replace('-', '')[:20]}",
                     razorpay_payment_id=f"pay_{fake.uuid4().replace('-', '')[:20]}",
                 )
                 db.add(final_payment)
                 payments.append(final_payment)
+
+        elif status == BookingStatus.PAYMENT_FAILED:
+            payment = Payment(
+                booking_id=booking.id,
+                amount=advance_amount,
+                currency=CURRENCY,
+                payment_type=PaymentType.ADVANCE,
+                status=PaymentStatus.FAILED,
+                escrow_status=EscrowStatus.PENDING,
+                vendor_released_amount=0,
+                escrow_amount=0,
+                refunded_amount=0,
+                refund_percentage=0.0,
+                razorpay_order_id=f"order_{fake.uuid4().replace('-', '')[:20]}",
+                razorpay_payment_id=f"pay_{fake.uuid4().replace('-', '')[:20]}",
+            )
+            db.add(payment)
+            payments.append(payment)
 
     db.commit()
 
@@ -497,38 +568,87 @@ def create_payments(bookings):
     return payments
 
 
+def refund_advance_payments(bookings, payments):
+    for booking in bookings:
+        if booking.status != BookingStatus.CANCELLED:
+            continue
+        advance_payment = next(
+            (
+                p
+                for p in payments
+                if p.booking_id == booking.id
+                and p.payment_type == PaymentType.ADVANCE
+                and p.status == PaymentStatus.SUCCESS
+            ),
+            None,
+        )
+        if advance_payment is None:
+            continue
+        refund_percentage = 0.7
+        refund_amount = int(advance_payment.amount * refund_percentage)
+        advance_payment.status = PaymentStatus.REFUNDED
+        advance_payment.escrow_status = EscrowStatus.REFUNDED
+        advance_payment.refunded_amount = refund_amount
+        advance_payment.refund_percentage = refund_percentage
+
+    for booking in bookings:
+        if booking.status != BookingStatus.CANCELLATION_REQUESTED:
+            continue
+        advance_payment = next(
+            (
+                p
+                for p in payments
+                if p.booking_id == booking.id
+                and p.payment_type == PaymentType.ADVANCE
+                and p.status == PaymentStatus.SUCCESS
+            ),
+            None,
+        )
+        if advance_payment is None:
+            continue
+        refund_percentage = 0.7
+        refund_amount = int(advance_payment.amount * refund_percentage)
+        advance_payment.status = PaymentStatus.REFUNDED
+        advance_payment.escrow_status = EscrowStatus.REFUNDED
+        advance_payment.refunded_amount = refund_amount
+        advance_payment.refund_percentage = refund_percentage
+        booking.status = BookingStatus.CANCELLED
+
+    db.commit()
+
+
 def create_payouts(payments):
-    """Create payouts from payments."""
     if not payments:
         print("No payments available to create payouts")
         return []
 
     payouts = []
-    vendor_ids = set()
 
     for payment in payments:
-        if payment.status == PaymentStatus.SUCCESS and payment.booking:
-            if not payment.booking.listing:
-                continue
-            vendor_id = payment.booking.listing.vendor_id
-            vendor_ids.add(vendor_id)
+        if payment.status != PaymentStatus.SUCCESS:
+            continue
+        if not payment.booking:
+            continue
+        listing = (
+            db.query(Listing).filter(Listing.id == payment.booking.listing_id).first()
+        )
+        if not listing:
+            continue
 
-            vendor_share = (
-                int(payment.vendor_released_amount)
-                if payment.vendor_released_amount
-                else 0
-            )
+        vendor_share = payment.vendor_released_amount or 0
+        if vendor_share <= 0:
+            continue
 
-            if vendor_share > 0:
-                payout = Payout(
-                    booking_id=payment.booking_id,
-                    payment_id=payment.id,
-                    vendor_id=vendor_id,
-                    amount=vendor_share,
-                    status=PayoutStatus.COMPLETED,
-                )
-                db.add(payout)
-                payouts.append(payout)
+        payout = Payout(
+            booking_id=payment.booking_id,
+            payment_id=payment.id,
+            vendor_id=listing.vendor_id,
+            amount=vendor_share,
+            currency=CURRENCY,
+            status=PayoutStatus.COMPLETED,
+        )
+        db.add(payout)
+        payouts.append(payout)
 
     db.commit()
 
@@ -537,7 +657,6 @@ def create_payouts(payments):
 
 
 def create_reviews(bookings, n=40):
-    """Create reviews for completed bookings."""
     if not bookings:
         print("No bookings available for reviews")
         return []
@@ -551,7 +670,6 @@ def create_reviews(bookings, n=40):
     selected_bookings = get_random_sample_safe(completed_bookings, n)
 
     if not selected_bookings:
-        print("No bookings selected for reviews")
         return []
 
     for booking in selected_bookings:
@@ -571,13 +689,8 @@ def create_reviews(bookings, n=40):
 
 
 def create_chat_rooms(users, vendors, listings, bookings, n=30):
-    """Create chat rooms."""
-    if not users:
-        print("No users available for chat rooms")
-        return []
-
-    if not vendors:
-        print("No vendors available for chat rooms")
+    if not users or not vendors:
+        print("No users/vendors available for chat rooms")
         return []
 
     chat_rooms = []
@@ -591,7 +704,6 @@ def create_chat_rooms(users, vendors, listings, bookings, n=30):
             continue
 
         pair = (user.id, vendor.id)
-
         if pair in used_pairs and len(used_pairs) < len(users) * len(vendors):
             continue
         used_pairs.add(pair)
@@ -616,13 +728,8 @@ def create_chat_rooms(users, vendors, listings, bookings, n=30):
 
 
 def create_messages(chat_rooms, users, n=100):
-    """Create messages in chat rooms."""
-    if not chat_rooms:
-        print("No chat rooms available for messages")
-        return []
-
-    if not users:
-        print("No users available for messages")
+    if not chat_rooms or not users:
+        print("No chat rooms/users available for messages")
         return []
 
     messages = []
@@ -630,16 +737,12 @@ def create_messages(chat_rooms, users, n=100):
     for chat_room in chat_rooms:
         message_count = random.randint(3, 15)
 
-        for i in range(message_count):
-            sender = (
-                get_random_safe([chat_room.user_id, users[0].id]) if users else None
-            )
-            if not sender:
-                continue
+        for _ in range(message_count):
+            sender_id = random.choice([chat_room.user_id, users[0].id])
 
             message = Message(
                 chat_id=chat_room.id,
-                sender_id=sender,
+                sender_id=sender_id,
                 content=fake.sentence(nb_words=random.randint(5, 20)),
                 is_read=random.choice([True, True, False]),
             )
@@ -653,80 +756,256 @@ def create_messages(chat_rooms, users, n=100):
     return messages
 
 
+def create_notifications(users, bookings):
+    if not users:
+        return 0
+
+    count = 0
+
+    for user in get_random_sample_safe(users, min(20, len(users))):
+        notification = Notification(
+            user_id=user.id,
+            type=random.choice(
+                [
+                    NotificationType.SYSTEM,
+                    NotificationType.BOOKING,
+                    NotificationType.PAYMENT,
+                ]
+            ),
+            reference_id=None,
+            title=random.choice(
+                [
+                    "Welcome to EventHub!",
+                    "Your booking is confirmed",
+                    "Payment successful",
+                    "New features available",
+                    "Vendor application update",
+                ]
+            ),
+            message=fake.sentence(nb_words=10),
+            is_read=random.choice([True, False]),
+        )
+        db.add(notification)
+        count += 1
+
+    for booking in bookings:
+        if booking.status in (
+            BookingStatus.CONFIRMED,
+            BookingStatus.COMPLETED,
+            BookingStatus.AWAITING_ADVANCE,
+        ):
+            notification = Notification(
+                user_id=booking.user_id,
+                type=NotificationType.BOOKING,
+                reference_id=booking.id,
+                title="Booking Update",
+                message=f"Your booking status is: {booking.status.value}",
+                is_read=random.random() > 0.3,
+            )
+            db.add(notification)
+            count += 1
+
+    db.commit()
+
+    print(f"{count} notifications created")
+    return count
+
+
+def create_device_tokens(users):
+    if not users:
+        return 0
+
+    count = 0
+    for user in get_random_sample_safe(users, min(15, len(users))):
+        for _ in range(random.randint(1, 2)):
+            platform = random.choice(
+                [DevicePlatform.ANDROID, DevicePlatform.IOS, DevicePlatform.WEB]
+            )
+            token = DeviceToken(
+                user_id=user.id,
+                token=fake.uuid4(),
+                platform=platform,
+                device_id=fake.uuid4()[:8],
+                app_version=f"{random.randint(1, 5)}.{random.randint(0, 9)}.0",
+                is_active=True,
+            )
+            db.add(token)
+            count += 1
+
+    db.commit()
+
+    print(f"{count} device tokens created")
+    return count
+
+
+# --- VERIFICATION ---
+
+
+def print_summary(
+    users, vendors, listings, bookings, payments, payouts, reviews, chat_rooms, messages
+):
+    print()
+    print("=" * 60)
+    print("  VERIFICATION SUMMARY")
+    print("=" * 60)
+    print(f"  Records created per model:")
+    print(f"    {'Users:':20} {len(users):>4}")
+    print(f"    {'Vendors:':20} {len(vendors):>4}")
+    print(f"    {'Listings:':20} {len(listings):>4}")
+    print(f"    {'Bookings:':20} {len(bookings):>4}")
+    print(f"    {'Payments:':20} {len(payments):>4}")
+    print(f"    {'Payouts:':20} {len(payouts):>4}")
+    print(f"    {'Reviews:':20} {len(reviews):>4}")
+    print(f"    {'Chat Rooms:':20} {len(chat_rooms):>4}")
+    print(f"    {'Messages:':20} {len(messages):>4}")
+    print(f"    {'Notifications:':20} {db.query(Notification).count():>4}")
+    print(f"    {'Device Tokens:':20} {db.query(DeviceToken).count():>4}")
+    print()
+
+    status_counts = Counter(b.status.value for b in bookings)
+    print(f"  Booking Status Distribution:")
+    for status_name in sorted(status_counts.keys()):
+        print(f"    {status_name + ':':30} {status_counts[status_name]:>4}")
+    print()
+
+    payment_status_counts = Counter(p.status.value for p in payments)
+    print(f"  Payment Status Distribution:")
+    for status_name in sorted(payment_status_counts.keys()):
+        print(f"    {status_name + ':':30} {payment_status_counts[status_name]:>4}")
+    print()
+
+    payment_type_counts = Counter(p.payment_type.value for p in payments)
+    print(f"  Payment Type Distribution:")
+    for type_name in sorted(payment_type_counts.keys()):
+        print(f"    {type_name + ':':30} {payment_type_counts[type_name]:>4}")
+    print()
+
+    total_booking_price = sum(b.total_price for b in bookings)
+    total_payment_amount = sum(p.amount for p in payments)
+    print(f"  Payment Statistics:")
+    print(f"    {'Total booking value (INR):':30} {total_booking_price:>10.2f}")
+    print(f"    {'Total payment amount:':30} {total_payment_amount:>10}")
+    print()
+
+    refunded_payments = [p for p in payments if p.status == PaymentStatus.REFUNDED]
+    total_refunded = sum(p.refunded_amount or 0 for p in refunded_payments)
+    print(f"  Refund Statistics:")
+    print(f"    {'Refunded payments:':30} {len(refunded_payments):>4}")
+    print(f"    {'Total refunded amount:':30} {total_refunded:>10}")
+    print()
+
+    inconsistencies = []
+
+    for b in bookings:
+        if b.status in (
+            BookingStatus.CONFIRMED,
+            BookingStatus.AWAITING_FINAL_PAYMENT,
+            BookingStatus.COMPLETED,
+            BookingStatus.CANCELLATION_REQUESTED,
+        ):
+            if not b.advance_paid:
+                inconsistencies.append(
+                    f"Booking {b.id}: status={b.status.value} but advance_paid=False"
+                )
+            if b.total_days is None or b.total_days < 1:
+                inconsistencies.append(
+                    f"Booking {b.id}: invalid total_days={b.total_days}"
+                )
+
+    if inconsistencies:
+        print(f"  DETECTED INCONSISTENCIES ({len(inconsistencies)}):")
+        for inc in inconsistencies[:10]:
+            print(f"    - {inc}")
+        if len(inconsistencies) > 10:
+            print(f"    ... and {len(inconsistencies) - 10} more")
+    else:
+        print(f"  No inconsistencies detected. All records valid.")
+    print("=" * 60)
+
+
 # --- MAIN RUN FUNCTION ---
 
 
 def run():
-    """Generate all fake data."""
     print("Generating realistic event marketplace data...")
     print("-" * 50)
 
-    # Step 1: Create admin user
-    create_admin_user()
+    admin = create_admin_user()
     print()
 
-    # Step 2: Create users (ensure we have enough)
     users = create_users(40)
     if not users:
         print("FATAL: No users created. Aborting.")
+        db.close()
         return
     print(f"Total users available: {len(users)}")
     print()
 
-    # Step 3: Create vendors (requires users)
     vendors = create_vendors(users, 15)
     if not vendors:
-        print(
-            "No vendors created. Aborting further data generation (listings require vendors)."
-        )
+        print("No vendors created. Aborting further data generation.")
+        db.close()
         return
     print(f"Total vendors available: {len(vendors)}")
     print()
 
-    # Step 4: Create listings (requires vendors)
     listings = create_listings(vendors, 50)
     if not listings:
         print("No listings created. Aborting further data generation.")
+        db.close()
         return
     print(f"Total listings available: {len(listings)}")
     print()
 
-    # Step 5: Add listing images
     add_listing_images(listings)
     print()
 
-    # Step 6: Create bookings (requires users and listings)
     bookings = create_bookings(users, listings, 70)
     if not bookings:
         print("No bookings created. Aborting further data generation.")
+        db.close()
         return
     print(f"Total bookings available: {len(bookings)}")
     print()
 
-    # Step 7: Create payments (requires bookings)
     payments = create_payments(bookings)
     print(f"Total payments available: {len(payments)}")
     print()
 
-    # Step 8: Create payouts (optional - requires payments)
-    create_payouts(payments)
+    refund_advance_payments(bookings, payments)
+    print("Refund processing completed")
     print()
 
-    # Step 9: Create reviews (optional - requires bookings)
-    create_reviews(bookings, 40)
+    payouts = create_payouts(payments)
     print()
 
-    # Step 10: Create chat rooms (optional)
+    reviews = create_reviews(bookings, 40)
+    print()
+
     chat_rooms = create_chat_rooms(users, vendors, listings, bookings, 30)
     print(f"Total chat rooms available: {len(chat_rooms)}")
     print()
 
-    # Step 11: Create messages (optional)
-    create_messages(chat_rooms, users, 100)
+    messages = create_messages(chat_rooms, users, 100)
     print()
 
-    print("-" * 50)
-    print("Dataset generation completed!")
+    create_notifications(users, bookings)
+    print()
+
+    create_device_tokens(users)
+    print()
+
+    print_summary(
+        users,
+        vendors,
+        listings,
+        bookings,
+        payments,
+        payouts,
+        reviews,
+        chat_rooms,
+        messages,
+    )
 
 
 if __name__ == "__main__":

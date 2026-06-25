@@ -30,6 +30,7 @@ class BookingStatus(str, enum.Enum):
     AWAITING_FINAL_PAYMENT = "AWAITING_FINAL_PAYMENT"
     REJECTED = "REJECTED"
     CANCELLED = "CANCELLED"
+    CANCELLATION_REQUESTED = "CANCELLATION_REQUESTED"
     PAYMENT_FAILED = "PAYMENT_FAILED"
     RETRY_PAYMENT = "RETRY_PAYMENT"
 
@@ -72,6 +73,7 @@ class Booking(Base):
     )
 
     special_request = Column(Text, nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

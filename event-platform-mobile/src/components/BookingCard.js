@@ -44,7 +44,11 @@ const BookingCard = ({ booking, onPress, variant = 'user' }) => {
           <Text style={styles.title} numberOfLines={1}>
             {title}
           </Text>
-          <StatusBadge status={booking.status} size="small" advancePaid={booking.advance_paid} />
+          {(() => {
+            const hasRefund = booking.payments && booking.payments.some(p => p.status === 'REFUNDED' || p.status === 'refunded');
+            const badgeStatus = hasRefund ? 'REFUNDED' : booking.status;
+            return <StatusBadge status={badgeStatus} size="small" advancePaid={booking.advance_paid} />;
+          })()}
         </View>
         
         <View style={styles.details}>

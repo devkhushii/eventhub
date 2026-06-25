@@ -66,6 +66,24 @@ export const rejectBooking = async (bookingId) => {
   return updateVendorBookingStatus(bookingId, 'REJECTED');
 };
 
+export const processRefund = async (bookingId) => {
+  if (!bookingId) {
+    throw new Error('Booking ID is required');
+  }
+  console.log('[Vendors API] Processing refund for booking:', bookingId);
+  const response = await apiClient.post(`/vendors/bookings/${bookingId}/refund`);
+  return response.data;
+};
+
+export const rejectCancellation = async (bookingId) => {
+  if (!bookingId) {
+    throw new Error('Booking ID is required');
+  }
+  console.log('[Vendors API] Rejecting cancellation for booking:', bookingId);
+  const response = await apiClient.post(`/vendors/bookings/${bookingId}/reject-cancellation`);
+  return response.data;
+};
+
 export const registerDeviceToken = async (deviceToken, platform = 'expo') => {
   if (!deviceToken) {
     throw new Error('Device token is required');
@@ -92,6 +110,8 @@ export default {
   updateVendorBookingStatus,
   acceptBooking,
   rejectBooking,
+  processRefund,
+  rejectCancellation,
   registerDeviceToken,
   unregisterDeviceToken,
 };

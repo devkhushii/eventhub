@@ -35,6 +35,8 @@ class PaymentResponse(BaseModel):
     escrow_status: str
     escrow_amount: int
     vendor_released_amount: int
+    refunded_amount: int = 0
+    refund_percentage: float = 0.0
 
     #  UNUSED: Dead schema fields for the old payment link flow
     # payment_link_url: Optional[str]

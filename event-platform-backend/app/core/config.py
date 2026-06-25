@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # Celery Background Tasks
     CELERY_BROKER_URL: str = "redis://redis:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://redis:6379/0"
+    
+    # Booking
+    ADVANCE_PAYMENT_WINDOW_HOURS: int = 24
 
     # Email
     # SMTP_HOST: str
